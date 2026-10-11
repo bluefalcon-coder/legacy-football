@@ -55,8 +55,25 @@
   #goals span{background:rgba(8,12,30,.78);border:1px solid var(--line);border-radius:8px;padding:3px 8px;font-size:11px;color:#c9d2f5}
   #goals span.ok{color:#7dff9a;border-color:#7dff9a}
   body:not(.ingame) #goals,body.replay #goals,body.tut #goals{display:none!important}
-  body.simple #bf,body.simple #bx,body.simple #b2,body.simple #b3,body.simple #b4,body.simple #b5{display:none}
-  body.simple:not(.defmanual) #b1{display:none}
+  body.simple #bf,body.simple #bx{display:none}
+  /* v37: the 1-5 receiver buttons are shown by the game only while you can throw; the outline color is the receiver's open / maybe / covered rating */
+  .btn.rb{display:none}
+  .btn.rb[data-st]{display:flex;flex-direction:column;line-height:1;gap:1px}
+  .btn.rb[data-st]::after{content:'';font-size:12px;font-weight:900;line-height:1}
+  .btn.rb[data-st=g]{border:4px solid var(--good,#4dff88);background:rgba(77,255,136,.18)}
+  .btn.rb[data-st=g]::after{content:'\2713'}
+  .btn.rb[data-st=y]{border:4px solid #ffd24d;background:rgba(255,210,77,.16)}
+  .btn.rb[data-st=y]::after{content:'\2022'}
+  .btn.rb[data-st=r]{border:4px solid var(--bad,#ff5c5c);background:rgba(255,92,92,.16)}
+  .btn.rb[data-st=r]::after{content:'\2715'}
+  .btn.rb[data-st=n]{border-color:rgba(255,255,255,.5)}
+  .btn.rb.best{box-shadow:0 0 0 3px rgba(255,212,0,.85),0 0 16px rgba(255,212,0,.6)}
+  body.nosprintbtn #bs{display:none}
+  /* v37: the stick: a dashed ring shows where sprinting starts, and the stick glows gold while you sprint */
+  #joy::before{content:'';position:absolute;inset:10px;border-radius:50%;border:2px dashed rgba(255,255,255,.2);pointer-events:none}
+  body.noedge #joy::before{display:none}
+  #joy.spr{border-color:#ffd400;box-shadow:0 0 0 3px rgba(255,212,0,.3),0 0 22px rgba(255,212,0,.55)}
+  #joy.spr i{background:rgba(255,212,0,.85)}
   body.simple #bj{width:96px;height:96px;font-size:15px;background:rgba(255,212,0,.28);border-color:rgba(255,212,0,.8)}
   body.simple #bs{width:70px;height:70px}
   body.idle #joyzone,body.idle #acts,body.idle #joy{display:none}
@@ -114,6 +131,13 @@
   .pbg{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
   .pbk{background:rgba(255,255,255,.07);border:2px solid transparent;border-radius:12px;padding:8px;cursor:pointer;display:flex;flex-direction:column;gap:4px}
   .pbk.on{border-color:var(--gold)}.pbk b{font-size:15px}.pbk span{font-size:12px;opacity:.75}
+  .pbk{position:relative}
+  .pbk.locked{opacity:.62;border-style:dashed;border-color:rgba(255,255,255,.28)}
+  .pbk.locked em{font-style:normal;font-weight:800;color:var(--gold);font-size:13px}
+  .pbk.locked small{font-size:11px;opacity:.8}
+  .pbk .lock,.pbk .newtag{position:absolute;top:6px;right:6px;font-style:normal;font-size:10px;font-weight:900;letter-spacing:.06em;border-radius:6px;padding:2px 6px;z-index:1}
+  .pbk .lock{background:rgba(0,0,0,.6);color:#ffd400}
+  .pbk .newtag{background:#7dff9a;color:#06240f}
   .hint{display:inline-block;border:1px solid;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:700;white-space:nowrap;margin-top:2px;align-self:flex-start}
   .prow2.slim{padding:8px 8px}.prow2 .skill{white-space:nowrap;font-size:14px;text-align:right}
   .prow2 .tr{width:auto;padding:7px 14px;font-size:13px}
@@ -393,7 +417,7 @@
   <div id="joy" class="idle"><i id="knob"></i></div>
   <div id="acts">
     <div class="r"><div class="btn sm" id="bf">FAKE</div><div class="btn sm" id="bx">AWAY</div><div class="btn sm" id="bl">LOCK</div></div>
-    <div class="r"><div class="btn" id="b1">1</div><div class="btn" id="b2">2</div><div class="btn" id="b3">3</div><div class="btn" id="b4">4</div><div class="btn" id="b5">5</div></div>
+    <div class="r"><div class="btn rb" id="b1">1</div><div class="btn rb" id="b2">2</div><div class="btn rb" id="b3">3</div><div class="btn rb" id="b4">4</div><div class="btn rb" id="b5">5</div></div>
     <div class="r"><div class="btn lg" id="bs">SPRINT</div><div class="btn lg" id="bj">JUKE</div></div>
   </div>
   <button class="btn" id="snapBtn">SNAP</button>
@@ -1067,6 +1091,7 @@ function setupFormation(force) {
       if (b) { b.bl = true; b.wp = []; b.wi = 0; b.stopEnd = true; }
     }
   }
+  assignSlots();      // v37: receiver numbers (badges, buttons, keys 1-5) run left to right across the field
   // --- defense: the call is chosen by the defensive team (you, or the CPU) ---
   const call = force.call || pick(G.cfg.tutor ? ['man', 'man', 'zone', 'zone', 'blitz', 'deep'] : ['man', 'man', 'zone', 'zone', 'blitz', 'deep', 'cover2', 'spy', 'cblitz']);
   G.call = call;
@@ -1220,7 +1245,7 @@ addEventListener('keydown', e => {
   if (e.code === 'Space') { e.preventDefault(); primary(G.vs ? 0 : undefined); return; }
   if (G.vs && (e.code === 'Enter' || e.code === 'NumpadEnter')) { e.preventDefault(); primary(1); return; }
   const dg = digitOf(e.code);
-  if (dg) { if (G.ask) { askKey(dg.n); return; } if (G.state === 'pre') menuKey(dg.n, G.vs ? dg.seat : undefined); else if (!G.vs || dg.seat === offSeat()) passTo(dg.n - 1); return; }
+  if (dg) { if (G.ask) { askKey(dg.n); return; } if (G.state === 'pre') menuKey(dg.n, G.vs ? dg.seat : undefined); else if (!G.vs || dg.seat === offSeat()) passSlot(dg.n); return; }
   if (e.code === 'Tab' && G.state === 'pre') { e.preventDefault(); preCycle(); return; }
   if (e.code === 'KeyB' && G.state === 'pre' && !G.cfg.tutor) { e.preventDefault(); showPlaybook(); return; }
   if (e.code === 'KeyH' && !G.vs && !G.cfg.tutor) { e.preventDefault(); togglePause(); showHow(1, 'pause'); return; }
@@ -1249,7 +1274,7 @@ addEventListener('keydown', e => {
 addEventListener('keyup', e => { keys[e.code] = false; });
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; if (G.active && !G.paused && !G.show && G.state !== 'pre' && G.state !== 'dead') togglePause(); });
 const joy = { x: 0, z: 0 };
-let touchSprint = false;
+let touchSprint = false, edgeSprint = false;      // v37: edgeSprint = the stick is pushed all the way out
 
 function axisOf(l, r, u, d) { let ix = (r ? 1 : 0) - (l ? 1 : 0), iz = (u ? 1 : 0) - (d ? 1 : 0); return { ix, iz }; }
 function readInput() {
@@ -1259,7 +1284,7 @@ function readInput() {
     const m = Math.hypot(ix, iz);
     if (m > 1) { ix /= m; iz /= m; }
     sel.ix = ix; sel.iz = iz; sel2.ix = sel2.iz = 0;
-    sprintHeld = !!(keys.ShiftLeft || keys.ShiftRight) || touchSprint; sprintHeld2 = false;
+    sprintHeld = !!(keys.ShiftLeft || keys.ShiftRight) || touchSprint || edgeSprint; sprintHeld2 = false;
     return;
   }
   const os = offSeat();
@@ -1269,10 +1294,17 @@ function readInput() {
   sel.ix = ix; sel.iz = iz;
   m = Math.hypot(d.ix, d.iz);
   sel2.ix = m > 1 ? d.ix / m : d.ix; sel2.iz = m > 1 ? d.iz / m : d.iz;
-  sprintHeld = !!(os ? keys.ShiftRight : keys.ShiftLeft) || touchSprint;
+  sprintHeld = !!(os ? keys.ShiftRight : keys.ShiftLeft) || touchSprint || edgeSprint;
   sprintHeld2 = !!(os ? keys.ShiftLeft : keys.ShiftRight);
 }
 
+// v37: how sprint works on a touch screen - 'edge' (push the stick all the way out, the default), 'button' (the SPRINT button) or 'both'. One-hand layouts always keep the button.
+const EDGE_ON = 0.85, EDGE_OFF = 0.70;
+function sprintMode() { const o = store.load().opts, h = o.hand; if (h === 'one-r' || h === 'one-l') return 'both'; return o.sprintMode === 'button' || o.sprintMode === 'both' ? o.sprintMode : 'edge'; }
+const edgeOn = () => sprintMode() !== 'button';
+const btnOn = () => sprintMode() !== 'edge';
+function passSlot(n) { const i = recs.findIndex(r => r.slot === n); if (i >= 0) passTo(i); }      // v37: number buttons and keys follow the left-to-right order on the field
+function assignSlots() { const o = recs.map((r, i) => ({ r, i })).filter(e => !e.r.bl).sort((a, b) => a.r.x - b.r.x || a.i - b.i); recs.forEach(r => { r.slot = 0; }); o.forEach((e, k) => { e.r.slot = k + 1; }); }      // a receiver who stays in to block gets no number
 (function setupTouch() {
   const isTouch = IS_TOUCH;
   if (!isTouch) return;
@@ -1285,6 +1317,9 @@ function readInput() {
   function upd(e) {
     let dx = e.clientX - cx, dy = e.clientY - cy;
     const max = 66, m = Math.hypot(dx, dy);
+    // v37: push the stick almost all the way out and you sprint (on at 85%, off again below 70% so a drifting thumb does not flicker)
+    const want = edgeOn() && (m >= max * (edgeSprint ? EDGE_OFF : EDGE_ON));
+    if (want !== edgeSprint) { edgeSprint = want; j.classList.toggle('spr', want); }
     if (m > max) { dx = dx / m * max; dy = dy / m * max; }
     knob.style.transform = `translate(${dx}px,${dy}px)`;
     joy.x = dx / max; joy.z = -dy / max;
@@ -1300,14 +1335,14 @@ function readInput() {
     upd(e);
   });
   zone.addEventListener('pointermove', e => { if (e.pointerId === id) upd(e); });
-  const end = e => { if (e.pointerId === id) { id = null; joy.x = joy.z = 0; home(); } };
+  const end = e => { if (e.pointerId === id) { id = null; joy.x = joy.z = 0; edgeSprint = false; j.classList.remove('spr'); home(); } };
   zone.addEventListener('pointerup', end); zone.addEventListener('pointercancel', end);
   const tap = (el, fn) => el.addEventListener('pointerdown', e => { e.preventDefault(); if (playing()) fn(); });
-  tap($('b1'), () => (humanO() ? passTo(0) : manualSwitch()));
-  tap($('b2'), () => passTo(1));
-  tap($('b3'), () => passTo(2));
-  tap($('b4'), () => passTo(3));
-  tap($('b5'), () => passTo(4));
+  tap($('b1'), () => (humanO() ? passSlot(1) : manualSwitch()));
+  tap($('b2'), () => passSlot(2));
+  tap($('b3'), () => passSlot(3));
+  tap($('b4'), () => passSlot(4));
+  tap($('b5'), () => passSlot(5));
   tap($('bl'), () => toggleLock());
   tap($('bf'), () => pumpFake());
   tap($('bx'), () => throwAway());
@@ -1317,7 +1352,7 @@ function readInput() {
   const oneHand = () => { const h = store.load().opts.hand; return h === 'one-r' || h === 'one-l'; };
   bs.addEventListener('pointerdown', e => { e.preventDefault(); if (oneHand()) { touchSprint = !touchSprint; bs.classList.toggle('on', touchSprint); return; } touchSprint = true; bs.classList.add('on'); });
   const bsEnd = () => { if (oneHand()) return; touchSprint = false; bs.classList.remove('on'); };
-  window.sprintReset = () => { touchSprint = false; bs.classList.remove('on'); };
+  window.sprintReset = () => { touchSprint = false; edgeSprint = false; j.classList.remove('spr'); bs.classList.remove('on'); };
   bs.addEventListener('pointerup', bsEnd); bs.addEventListener('pointercancel', bsEnd); bs.addEventListener('pointerleave', bsEnd);
 })();
 // which on-screen controls make sense right now: between plays the touch pad gives way to the cards and a big SNAP / NEXT button
@@ -1735,7 +1770,7 @@ function stopGame() {
   hidePlays(); $('kick').style.display = 'none';
   $('tbar').style.display = 'none';
   for (const k in keys) keys[k] = false;
-  joy.x = joy.z = 0;
+  joy.x = joy.z = 0; edgeSprint = false;
   setMsg('', '');
 }
 function startGame(cfg) {
@@ -1757,7 +1792,7 @@ function startGame(cfg) {
   G.ask = null; G.defHist = []; G.offHist = []; G.conv = null; G.convAsk = null; G.scoreFlag = null; G.nohuddle = false; G.cpuHurry = false; G.flags = 2; G.mom = 0; G.rev = null; G.review = null; G.mo = null; G.rd = null; G.ch = null; G.tricks = 2; G.auds = 2; G.audOn = false; G.defHist = []; G.score = { user: 0, opp: 0 }; G.q = 1; G.clock = QLEN; G.ot = false; G.otRound = 0; G.otDrives = 0;
   G.stats = { plays: 0, yards: 0 };
   stamina = 1; winded = false; stamina1 = 1; winded1 = false; lastHud = ''; boxInit(); if (!G.cfg.resume && !G.cfg.chal) goalsInit(); G.autoT = 0; G.streak = 0; G.fire = false; FX.slowT = 0; FX.slowK = 1; FX.heat = 0;
-  G.to = { user: 2, opp: 2 }; G.lastRunoff = 0; G.waitTO = false; G.pending = null; G.kick = null; G.selOff = 'Spread'; G.selGroup = 'short'; G.selDef = 'zone'; G.kickNext = false; G.kret = null;
+  G.to = { user: 2, opp: 2 }; G.lastRunoff = 0; G.waitTO = false; G.pending = null; G.kick = null; G.selOff = PRO() ? 'Spread' : 'QuickOuts'; G.selGroup = 'short'; G.selDef = 'zone'; G.kickNext = false; G.kret = null;
   const RS = G.cfg.resume;
   G.home = null; G.noise = 0.3; G.plan = 'bal'; G.planX = 'bal'; G.planOpen = false; G.planCb = null;
   if (RS) { G.firstPoss = 'user'; applySnap(RS); if (!G.home && !G.cfg.tutor && !G.vs && !G.ch) homeInit(); }
@@ -1781,7 +1816,7 @@ function startKickoff() {
 function togglePause() {
   if (!G.active || G.modal || G.planOpen) return;
   if (G.paused) { G.paused = false; $('scr').style.display = 'none'; return; }
-  G.paused = true; for (const k in keys) keys[k] = false; joy.x = joy.z = 0;
+  G.paused = true; for (const k in keys) keys[k] = false; joy.x = joy.z = 0; edgeSprint = false;
   showPause();
 }
 function nextPlay(fresh) {
@@ -2052,6 +2087,7 @@ function recoverLoose(r, oob) {
   const L = G.loose; G.loose = null;
   const offSide = offKey(), z = clamp(L.z, 1, GOAL + 1);
   G.fumInfo = { by: L.by.num, rec: r.num, lost: !oob && r.side !== offSide };
+  if (G.mx && !G.vs && !oob && r.side === 'u') { if (L.muff) G.mx.muffrec = true; if (L.label === 'BAD SNAP' && offSide === 'u') G.mx.badsave = true; }      // v38: milestones
   G.ball.y = 1.3;
   const tag = L.label || (L.muff ? 'MUFFED' : 'FUMBLE');
   if (!G.fumInfo.lost) {
@@ -2712,7 +2748,7 @@ function drawEntities() {
       ctx.fillStyle = 'rgba(8,12,30,.85)'; ctx.beginPath(); ctx.arc(q.x, q.y, rad, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
       ctx.fillStyle = '#fff'; ctx.font = `800 ${rad * 1.2}px system-ui,sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(String(i + 1), q.x, q.y + 1);
+      ctx.fillText(String(r.slot || i + 1), q.x, q.y + 1);
       if (r.p && q.s > 11) nameTag(badgeStar(r) + lastName(r.p), q.x, q.y - rad - 3, Math.max(10, rad * 0.8));
       if (G.state === 'live' && i === G.bestIdx && G.pred && G.pred[i] && G.pred[i].cls === 'catch') {      // v17: the most open receiver
         const bob = Math.sin(FX.t * 9) * 3, ty = q.y - rad - (r.p && q.s > 11 ? Math.max(10, rad * 0.8) + 8 : 6) - bob;
@@ -2910,8 +2946,8 @@ function suggestGroup() {
 }
 function pickFromGroup(k) {
   const g = groupOf(k) || GROUPS[0];
-  const opts = g.plays.filter(p => !G.play || p !== G.play.n);
-  G.selGroup = g.k; G.selOff = pick(opts.length ? opts : g.plays);
+  const own = unlPlaysOf(g), opts = own.filter(p => !G.play || p !== G.play.n);
+  G.selGroup = g.k; G.selOff = pick(opts.length ? opts : (own.length ? own : g.plays));
   return G.selOff;
 }
 function hidePlays() { const e = $('plays'); if (e) e.style.display = 'none'; }
@@ -2921,7 +2957,7 @@ function renderPlays() {
   if (!G.active || G.cfg.tutor || G.state !== 'pre') { el.style.display = 'none'; return; }
   const card = (act, v, key, label, cls, hint) => `<button class="pc ${cls || ''}" data-act="${act}" data-v="${v}"><small>${key}</small>${label}${hint ? '<em>' + hint + '</em>' : ''}</button>`;
   const offCards = (kl) => GROUPS.map((g, i) => card('selplay', g.k, kl(i + 1), g.n, 'big ' + (G.selGroup === g.k ? 'on ' : '') + (g.k === 'run' ? 'run' : ''), g.t)).join('');
-  const defCards = (kl) => ['man', 'zone', 'blitz', 'deep'].map((k, i) => card('selcall', k, kl(i + 1), CALLS[k].n, 'big ' + (G.selDef === k ? 'on' : ''), CALLS[k].h)).join('');
+  const defCards = (kl) => ['man', 'zone', 'blitz', 'deep'].filter(ownsCall).map((k, i) => card('selcall', k, kl(i + 1), CALLS[k].n, 'big ' + (G.selDef === k ? 'on' : ''), CALLS[k].h)).join('');
   let h = '';
   if (G.vs) {
     const os = offSeat(), ds = defSeat();
@@ -2941,12 +2977,12 @@ function renderPlays() {
     { const d = Math.round(110 - G.los), mx = kickMaxD(kickerFor('u'));
       if (G.down === 4) h += card('punt', 'x', 'U', 'Punt', 'sp');
       h += card('fg', 'x', 'K', 'Field goal', 'sp' + (d > mx ? ' off' : ''), d + ' yd'); }
-    if ((G.tricks || 0) > 0) h += card('selplay', 'trick', '4', 'Trick', 'big' + (G.selGroup === 'trick' ? ' on' : ''), G.tricks + ' left');
-    if ((G.auds || 0) > 0 && AUD[G.call] && !G.audOn) h += card('selplay', 'audible', '5', 'Audible', 'big', 'beat the ' + (G.call === 'man' ? 'man' : 'blitz'));
-    if (Object.keys(PBX.off).length) h += card('pb_mine', 'off', '6', 'My plays', 'sp mine' + (G.selGroup === 'mine' ? ' on' : ''), Object.keys(PBX.off).length + ' of yours');
+    if (proOk() && (G.tricks || 0) > 0) h += card('selplay', 'trick', '4', 'Trick', 'big' + (G.selGroup === 'trick' ? ' on' : ''), G.tricks + ' left');
+    if (proOk() && (G.auds || 0) > 0 && AUD[G.call] && !G.audOn) h += card('selplay', 'audible', '5', 'Audible', 'big', 'beat the ' + (G.call === 'man' ? 'man' : 'blitz'));
+    if (proOk() && Object.keys(PBX.off).length) h += card('pb_mine', 'off', '6', 'My plays', 'sp mine' + (G.selGroup === 'mine' ? ' on' : ''), Object.keys(PBX.off).length + ' of yours');
   } else {
     h += defCards(n => n);
-    if (Object.keys(PBX.def).length) h += card('pb_mine', 'def', '5', 'My calls', 'sp mine' + (PBX.def[G.selDef] ? ' on' : ''), Object.keys(PBX.def).length + ' of yours');
+    if (proOk() && Object.keys(PBX.def).length) h += card('pb_mine', 'def', '5', 'My calls', 'sp mine' + (PBX.def[G.selDef] ? ' on' : ''), Object.keys(PBX.def).length + ' of yours');
   }
   h += bCards();
   if (advOn()) {
@@ -2955,6 +2991,9 @@ function renderPlays() {
       h += card('prot', 'x', 'G', 'Protect: ' + (G.protect === 'max' ? 'Max (receiver blocks)' : 'Normal'), 'sp' + (G.protect === 'max' ? ' on' : ''));
     }
     h += card('playbook', 'x', 'B', G.vs || G.poss === 'user' ? 'Playbook' : 'More calls', 'sp');
+  } else if (!PRO()) {          // v38: in Legacy Football the Playbook is where you see and unlock your plays
+    const nw = unlNew().length;
+    h += card('playbook', 'x', 'B', 'Playbook', 'sp' + (nw ? ' on' : ''), nw ? nw + ' new' : 'see and unlock plays');
   }
   if (!G.vs && G.lastRunoff > 0 && G.to.user > 0 && !G.ot && (advOn() || G.q >= 4 || G.clock < 60)) h += card('timeout', 'x', 'T', 'Timeout (' + G.to.user + ')', 'sp');
   el.innerHTML = h; el.style.display = 'flex';
@@ -2973,10 +3012,10 @@ function showPlaybook() {
   const offOn = G.vs || G.poss === 'user', defOn = G.vs || G.poss === 'opp';
   const cardP = p => `<div class="pbk ${G.play && G.play.n === p.n ? 'on' : ''}" data-act="pbpick" data-v="${p.n}">${routeSvg(p)}<b>${p.n}</b><span>${esc(p.hint)}</span></div>`;
   let h = '';
-  if (offOn) for (const g of GROUPS) h += `<h3>${g.n}</h3><div class="pbg">${g.plays.map(n => cardP(findPlay(n))).join('')}</div>`;
-  if (offOn && Object.keys(PBX.off).length) h += `<h3>My plays</h3><div class="pbg">${Object.values(PBX.off).map(cardP).join('')}</div>`;
-  if (defOn) h += `<h3>Defensive calls</h3><div class="pbg">${ALL_CALLS.concat(Object.keys(PBX.def)).map(k => `<div class="pbk ${G.selDef === k ? 'on' : ''}" data-act="pbpick" data-v="${esc(k)}"><b>${esc(CALLS[k].n)}</b><span>${esc(CALLS[k].t)}</span></div>`).join('')}</div>`;
-  openScr(`<div class="wrap" style="background:rgba(6,11,26,.97);min-height:100%"><div class="topbar"><h2 style="margin:0">Playbook</h2><span class="sp"></span><button class="b sm" data-act="pbclose">Close</button></div><p class="muted sm">Tap a play to call it. The cards on the field pick a random play from their group - the playbook lets you choose exactly.</p>${h}</div>`);
+  if (offOn) for (const g of GROUPS) h += `<h3>${g.n}</h3><div class="pbg">${g.plays.map(n => unlCard('p:' + n, G.play && G.play.n === n)).join('')}</div>`;
+  if (offOn && proOk() && Object.keys(PBX.off).length) h += `<h3>My plays</h3><div class="pbg">${Object.values(PBX.off).map(cardP).join('')}</div>`;
+  if (defOn) h += `<h3>Defensive calls</h3><div class="pbg">${ALL_CALLS.map(k => unlCard('c:' + k, G.selDef === k)).join('')}${(proOk() ? Object.keys(PBX.def) : []).map(k => `<div class="pbk ${G.selDef === k ? 'on' : ''}" data-act="pbpick" data-v="${esc(k)}"><b>${esc(CALLS[k].n)}</b><span>${esc(CALLS[k].t)}</span></div>`).join('')}</div>`;
+  unlSeenLater(); openScr(`<div class="wrap" style="background:rgba(6,11,26,.97);min-height:100%"><div class="topbar"><h2 style="margin:0">Playbook</h2><span class="sp"></span><button class="b sm" data-act="pbclose">Close</button></div><p class="muted sm">Tap a play to call it. The cards on the field pick a random play from their group - the playbook lets you choose exactly.</p>${h}</div>`);
 }
 function pickPlaybook(v) {
   closeScr();
@@ -2986,6 +3025,7 @@ const TRICKS = ['PlayAction', 'DoubleMove', 'JetSweep', 'QBDraw'];
 const AUD = { man: 'Mesh', blitz: 'Screen', cblitz: 'Screen' };
 function selectPlay(n) {
   if (!playing() || G.state !== 'pre' || !humanO() || G.cfg.tutor) return;
+  if ((n === 'trick' || n === 'audible') && !proOk()) return;
   if (n === 'trick') {
     if ((G.tricks || 0) <= 0) { setMsg('', 'No trick plays left this game'); warnT = 1.2; return; }
     const t = pick(TRICKS.filter(x => !G.play || x !== G.play.n));
@@ -3004,6 +3044,7 @@ function selectPlay(n) {
   if (PBX.off[n]) { G.selGroup = 'mine'; G.selOff = n; setupFormation({ play: n, call: G.call, mirror: G.mirror }); updateHUD(); showPre(false); setMsg('', PBX.off[n].n + ': ' + PBX.off[n].hint); warnT = 1.6; return; }
   const g = groupOf(n);
   if (!g) return;
+  if (g.k !== n && !ownsPlay(n)) return;
   if (g.k === n) {            // a card: keep the current play if it already belongs to this card
     if (G.selGroup === g.k && G.play && g.plays.includes(G.play.n)) { renderPlays(); return; }
     pickFromGroup(g.k);
@@ -3016,17 +3057,19 @@ const FORM_NAME = { normal: 'Normal', wide: 'Wide', tight: 'Bunched' };
 const FORM_HINT = { normal: '', wide: 'Wide: receivers spread out - more room, longer throws.', tight: 'Bunched: receivers close together - quick short throws, crowded defenders.' };
 function resetPlayView() { if (G.play) setupFormation({ play: G.play.n, call: G.call, mirror: G.mirror }); updateHUD(); showPre(false); }
 function cycleForm() {
+  if (!proOk()) return;
   if (!playing() || G.state !== 'pre' || !humanO() || G.cfg.tutor) return;
   G.form = G.form === 'wide' ? 'tight' : G.form === 'tight' ? 'normal' : 'wide';
   resetPlayView(); if (FORM_HINT[G.form]) { setMsg('', FORM_HINT[G.form]); warnT = 2.2; }
 }
 function toggleProt() {
+  if (!proOk()) return;
   if (!playing() || G.state !== 'pre' || !humanO() || G.cfg.tutor) return;
   G.protect = G.protect === 'max' ? 'normal' : 'max';
   resetPlayView(); setMsg('', G.protect === 'max' ? 'Max protect: your last receiver stays in to block - you have one less target.' : 'Normal protection.'); warnT = 2.4;
 }
 function selectCall(c) {
-  if (!playing() || G.state !== 'pre' || !(G.poss === 'opp' || G.vs) || G.cfg.tutor || !CALLS[c]) return;
+  if (!playing() || G.state !== 'pre' || !(G.poss === 'opp' || G.vs) || G.cfg.tutor || !CALLS[c] || !ownsCall(c)) return;
   G.selDef = c;
   setupFormation({ play: G.play.n, call: c, mirror: G.mirror });
   updateHUD(); showPre(false);
@@ -3035,11 +3078,11 @@ function menuKey(n, seat) {
   if (G.cfg.tutor) return;
   if (G.vs) {
     if (seat === offSeat()) { const g = GROUPS[n - 1]; if (g) selectPlay(g.k); }
-    else { const k = ['man', 'zone', 'blitz', 'deep'][n - 1]; if (k) selectCall(k); }
+    else { const k = ['man', 'zone', 'blitz', 'deep'].filter(ownsCall)[n - 1]; if (k) selectCall(k); }
     return;
   }
-  if (G.poss === 'user') { const g = GROUPS[n - 1]; if (g) selectPlay(g.k); else if (n === 4) selectPlay('trick'); else if (n === 5) selectPlay('audible'); else if (n === 6) pbMine('off'); }
-  else { const k = ['man', 'zone', 'blitz', 'deep'][n - 1]; if (k) selectCall(k); else if (n === 5) pbMine('def'); }
+  if (G.poss === 'user') { const g = GROUPS[n - 1]; if (g) selectPlay(g.k); else if (n === 4) selectPlay('trick'); else if (n === 5) selectPlay('audible'); else if (n === 6 && proOk()) pbMine('off'); }
+  else { const k = ['man', 'zone', 'blitz', 'deep'].filter(ownsCall)[n - 1]; if (k) selectCall(k); else if (n === 5 && proOk()) pbMine('def'); }
 }
 
 // ---------- punts and field goals ----------
@@ -4226,7 +4269,7 @@ const ordn = n => n + (['th', 'st', 'nd', 'rd'][(n % 100 >> 3) ^ 1 && n % 10 < 4
 // ---------- How to play ----------
 const HOWTO = [
   { t: 'The goal', h: `<ul class="tips"><li><b>You play every snap</b> of every game, unless you choose otherwise. Nothing is simulated behind your back - the <b>Sim</b> buttons are always your choice, and a simmed game is marked <b>(sim)</b>.</li><li>Flag football: nobody gets hit. A play ends when a defender pulls your <b>flag</b>.</li><li>A <b>touchdown is worth 7 points</b>. You get 4 downs to gain 10 yards; make it and the downs reset.</li><li>On offense you are the <b>quarterback</b>. When you catch the ball you become the runner. On defense you control one defender at a time.</li></ul>` },
-  { t: 'Controls', h: `<div class="keys"><p><b>On a computer</b></p><p><span>W</span><span>A</span><span>S</span><span>D</span> or the arrow keys - move &nbsp; <span>Shift</span> - sprint (uses stamina)</p><p><span>Space</span> is the main button: it <b>snaps</b> the ball, then <b>throws to the receiver marked OPEN</b>, <b>jukes</b> when you carry the ball, and <b>lunges</b> on defense. You can also <b>click a receiver</b> to throw to him, or press <span>1</span><span>2</span><span>3</span> (and 4, 5 in 11v11) - before the snap those pick a play card. <span>Esc</span> - pause</p><p><b>On a phone or tablet</b></p><p>Left thumb: the joystick. Right thumb: the big ACTION button (its name changes: THROW, JUKE, LUNGE...) and SPRINT. <b>Tap a receiver</b> to throw to him. Tap the message in the middle of the screen (or the SNAP button) to snap the ball.</p><p><b>Want more?</b> Press <span>H</span> in a game to see every key. Turn on <b>Advanced controls</b> in Settings for formation (<span>V</span>), max protect (<span>G</span>), the full playbook (<span>B</span>), pump fake (<span>F</span>), throw away (<span>X</span>), timeouts (<span>T</span>) and manual defender switching (<span>E</span>).</p></div>` },
+  { t: 'Controls', h: `<div class="keys"><p><b>On a computer</b></p><p><span>W</span><span>A</span><span>S</span><span>D</span> or the arrow keys - move &nbsp; <span>Shift</span> - sprint (uses stamina)</p><p><span>Space</span> is the main button: it <b>snaps</b> the ball, then <b>throws to the receiver marked OPEN</b>, <b>jukes</b> when you carry the ball, and <b>lunges</b> on defense. You can also <b>click a receiver</b> to throw to him, or press <span>1</span><span>2</span><span>3</span> (and 4, 5 in 11v11) to throw to the receiver with that number, counted from the left - before the snap those pick a play card. <span>Esc</span> - pause</p><p><b>On a phone or tablet</b></p><p>Left thumb: the joystick - <b>push it all the way out to sprint</b> (the ring glows gold). Right thumb: the big ACTION button (its name changes: THROW, JUKE, LUNGE...) and the numbered buttons <b>1 - 5</b>, one for each receiver from left to right. A button's outline shows how open he is: <b>green</b> open, <b>yellow</b> maybe, <b>red</b> covered. <b>Tap a receiver</b> or his number to throw to him. (Settings can bring back a SPRINT button.) Tap the message in the middle of the screen (or the SNAP button) to snap the ball.</p><p><b>Want more?</b> Press <span>H</span> in a game to see every key. Turn on <b>Advanced controls</b> in Settings for formation (<span>V</span>), max protect (<span>G</span>), the full playbook (<span>B</span>), pump fake (<span>F</span>), throw away (<span>X</span>), timeouts (<span>T</span>) and manual defender switching (<span>E</span>).</p></div>` },
   { t: 'Reading the rings', h: `<ul class="tips"><li>The ring under each receiver tells the truth about a throw <b>made right now</b>: <b style="color:#4dff88">green</b> = safe, <b style="color:#ffd24d">yellow</b> = tight (a defender is close), <b style="color:#ff5c5c">red</b> = covered (likely broken up or intercepted).</li><li>The rings change as the defense moves, so <b>timing matters</b>. A ring that is red now may be green in a second.</li><li>The faint white lines on the field are the <b>routes</b> the receivers will run.</li><li>Throw from <b>behind the blue line</b>. If you run across it, you can no longer throw (illegal forward pass).</li><li>The receiver who is most open wears a gold <b>OPEN</b> marker - that is who SPACE (or the THROW button) throws to. If everybody is covered it throws the ball away for you.</li><li><b>Perfect throws:</b> once the play has developed, a receiver who gets open shows a <b>green ring shrinking</b> onto him (and <b>NOW!</b>). Throw while it shrinks and the pass is <b>PERFECT</b> - faster and much harder to knock down.</li><li>Don't hold the ball too long - the pass rush arrives in a few seconds.</li></ul>` },
   { t: 'Playing defense', h: `<ul class="tips"><li>When the CPU has the ball you control the circled defender. Chase the ball carrier and get within reach of the flag. The thin yellow ring is your reach; <span class="keys"><span>Space</span></span> lunges for a bigger reach (short cooldown).</li><li><b>The game switches you</b> to the defender closest to the ball. If you want full control, turn off <b>Auto-switch</b> in Settings and press <span class="keys"><span>E</span></span> (or tap <b>SW</b>) yourself.</li><li>Before each snap pick <b>Man, Zone, Blitz or Deep</b> - each card has a one-line hint. <b>Man</b> is tight, but one defender is always a step slow, so a good quarterback finds him. <b>Blitz</b> can sack the quarterback, but leaves receivers open. The CPU remembers what you call a lot and will try to beat it.</li><li>When a pass is in the air, two rings show where it will land: get inside the outer ring to break it up, the inner ring to intercept it.</li><li><b>Jump the route:</b> when you control a defender near a receiver and the quarterback is about to throw, press <span class="keys"><span>Space</span></span> (JUMP) to break on the ball. Guess right and you can pick it off - guess wrong and the receiver is wide open.</li><li><b>Sacks:</b> the quarterback can be sacked now. Blitz, or switch to a pass rusher and beat your blocker. A quarterback who sees a rusher coming may throw early or scramble.</li></ul>` },
   { t: 'Clock, downs & overtime', h: `<ul class="tips"><li>Four quarters of 2 minutes. The clock stops on incomplete passes and runs a little between snaps.</li><li>4 downs to gain 10 yards. Fail on 4th down and the other team takes over where the drive ended.</li><li>After a score the other team starts at their 25. After a <b>turnover</b> - an interception, a fumble or a turnover on downs - they take over <b>right where the play ended</b>.</li><li>Tied after four quarters: <b>overtime</b>. Each team gets a drive from midfield. In the playoffs, overtime continues until someone wins.</li></ul>` },
@@ -4259,6 +4302,8 @@ function showHow(i, from) { ui.howPage = i; if (from !== undefined) ui.howFrom =
 // ---------- landing ----------
 function showLanding() {
   stopGame(); ui.back = null;
+  if (freshNeeded()) { showFresh(); return; }      // v38: the one-time fresh start
+  freshMark();
   const S = season(), seen = opts().seenTut;
   let cont = '';
   const sg = savedInfo();
@@ -4279,7 +4324,7 @@ function showLanding() {
       <button class="b" data-act="chal">Challenges<small>Two-Minute Drill, Red Zone and a new Daily Challenge</small></button>
       ${seen ? `<button class="b" data-act="tutStart">Tutorial<small>Replay the practice plays</small></button>` : ''}
       <button class="b" data-act="howto">How to Play<small>A short guide with pictures</small></button>
-      <div class="row" style="justify-content:center"><button class="b sm" data-act="pb_open" data-v="landing">Playbook Studio</button><button class="b sm" data-act="trophies">Trophy Case</button><button class="b sm" data-act="bk_open">Save &amp; Backup</button><button class="b sm" data-act="settings">Settings</button><button class="b sm" data-act="about">About</button></div>
+      <div class="row" style="justify-content:center">${PRO() ? '<button class="b sm" data-act="pb_open" data-v="landing">Playbook Studio</button>' : ''}<button class="b sm" data-act="trophies">Trophy Case</button><button class="b sm" data-act="bk_open">Save &amp; Backup</button><button class="b sm" data-act="settings">Settings</button><button class="b sm" data-act="about">About</button></div>
     </div><p class="muted sm" style="text-align:center;margin-top:26px">Difficulty: ${DIFF[opts().diff].label} - Saved in this browser</p>${backupNudge()}</div>`);
 }
 
@@ -4374,7 +4419,7 @@ function homeHtml(S) {
     tile('tab', 'rewards', 'Rewards &amp; shop', rwD().coins + ' coins - milestones, cards, looks'),
     tile('tab', 'stats', 'Stats &amp; records', 'Leaders, record book, trophies'),
     tile('cust_open', 'hub', 'My team', 'Name, colors and uniform'),
-    tile('pb_open', 'hub', 'Playbook Studio', pbUsed() ? pbUsed() + ' of ' + pbD().slots + ' slots used' : 'Draw your own plays and defensive calls'),
+    PRO() ? tile('pb_open', 'hub', 'Playbook Studio', pbUsed() ? pbUsed() + ' of ' + pbD().slots + ' slots used' : 'Draw your own plays and defensive calls') : '',
     tile('expansion', 'hub', 'Expansion team', expGet() ? 'Your new team and its partner' : 'Found a brand-new team'),
     tile('bk_open', 'hub', 'Save &amp; backup', 'Last backup: ' + ago(d.lastBackup), !d.lastBackup && S.n >= 1 && (S.wk > 1 || S.n > 1)),
     tile('settings', 'hub', 'Settings', 'Difficulty, sound, controls')
@@ -4569,7 +4614,7 @@ function showSettings() {
     <div class="opt ${o.replay !== false ? 'on' : ''}" data-act="togreplay"><b>Instant replays: ${o.replay !== false ? 'On' : 'Off'}</b><span>After touchdowns, turnovers and big plays you can watch it again (press R).</span></div>
     <div class="opt ${!o.manualSw ? 'on' : ''}" data-act="togautosw"><b>Auto-switch defender: ${!o.manualSw ? 'On' : 'Off'}</b><span>On: the game moves you to whoever is closest to the ball. Off: you stay on your player until you press E (or tap SW).</span></div>
     <div class="opt ${o.assist ? 'on' : ''}" data-act="togassist"><b>Assist mode: ${o.assist ? 'On' : 'Off'}</b><span>Easier for all ages: throws are caught more easily and the defense runs a little slower.</span></div>
-    <div class="opt ${o.adv ? 'on' : ''}" data-act="togadv"><b>Advanced controls: ${o.adv ? 'On' : 'Off'}</b><span>Off keeps it simple: one ACTION button and tap a receiver to throw. On adds formation, max protect, the full playbook, fake and throw away buttons.</span></div>
+    ${PRO() ? `<div class="opt ${o.adv ? 'on' : ''}" data-act="togadv"><b>Advanced controls: ${o.adv ? 'On' : 'Off'}</b><span>Off keeps it simple: one ACTION button and tap a receiver to throw. On adds formation, max protect, the full playbook, fake and throw away buttons.</span></div>` : ''}
     <div class="opt ${o.returns !== false ? 'on' : ''}" data-act="togreturns"><b>Kick returns: ${o.returns !== false ? 'On' : 'Off'}</b><span>When the CPU punts or kicks off to you, you run the return. Off: the ball is just placed for you.</span></div>
     <div class="opt ${o.fumbles !== false ? 'on' : ''}" data-act="togfum"><b>Fumbles &amp; wild plays: ${o.fumbles !== false ? 'On' : 'Off'}</b><span>Now and then a flag pull pops the ball loose, a snap sails over the QB's head, or a returner muffs the catch. Both teams race for the ball, and the team that grabs it can run it back. Off: the ball is never dropped.</span></div>
     ${navigator.vibrate ? `<div class="opt ${o.haptics !== false ? 'on' : ''}" data-act="toghaptics"><b>Vibration: ${o.haptics !== false ? 'On' : 'Off'}</b><span>A little buzz on touchdowns, sacks and interceptions (phones that support it).</span></div>` : ''}
@@ -4601,7 +4646,7 @@ function showPause() {
     ${tut ? '' : simPauseHtml()}
     ${saveable() ? '<button class="b" data-act="saveq">Save &amp; quit<small>Come back later and carry on from this point</small></button>' : ''}
     <button class="b" data-act="howto">How to Play</button>
-    ${tut ? '' : '<button class="b" data-act="pb_open" data-v="pause">Playbook Studio<small>Draw your own plays and defensive calls</small></button>'}
+    ${tut || !PRO() ? '' : '<button class="b" data-act="pb_open" data-v="pause">Playbook Studio<small>Draw your own plays and defensive calls</small></button>'}
     ${GL3.on && !G.show ? '<button class="b" data-act="photo">Photo mode<small>Frame a shot of the frozen moment and save it as a picture</small></button>' : ''}
     <button class="b" data-act="settings">Settings</button>
     ${tut ? `<button class="b" data-act="tutSkip">${TUT.testing ? 'Back to the Studio' : 'Skip the tutorial'}</button>` : `<button class="b" data-act="forfeit">${armed ? 'Tap again to forfeit (counts as a loss)' : (G.cfg && G.cfg.chal ? 'Leave challenge' : G.cfg && G.cfg.tag !== 'EXH' ? 'Leave game (forfeit)' : 'Leave game')}</button>`}
@@ -4611,7 +4656,7 @@ function showPause() {
 // ---------- action router ----------
 function act(a, el) {
   const v = el && el.dataset ? el.dataset.v : null;
-  if (a11yAct(a, v) || pbAct(a, v, el) || simAct(a, v) || webAct(a, v) || kidAct(a)) return;
+  if (a11yAct(a, v) || pbAct(a, v, el) || simAct(a, v) || webAct(a, v) || kidAct(a) || unlAct(a, v) || freshAct(a)) return;
   if (mediaAct(a, v, el) || mediaAct2(a, v, el) || rwAct(a, v, el)) return;
   if (saveAct(a, el, v)) return;
   if (chalAct(a, v)) return;
@@ -5634,7 +5679,7 @@ function contractAct(a, v) {
 // One ACTION button does the right thing for the moment (throw to the best open receiver, hand off, juke, lunge, rush).
 // Tap on or near a receiver to throw to him. The best open receiver wears a gold OPEN marker.
 // Formation, max protect, playbook, fake and throw-away live behind "Advanced controls" in Settings (the keys still work).
-const advOn = () => !!(G.vs || store.load().opts.adv);
+const advOn = () => !!(G.vs || (PRO() && store.load().opts.adv));
 const pocketOk = () => !!(playing() && humanO() && G.state === 'live' && G.holder === qb && G.play && G.play.kind === 'pass' && !G.crossed && qb.z <= G.los + 0.3);
 // the receiver who is most open right now (with a little stickiness so the marker does not flicker)
 function bestOpen() {
@@ -5677,6 +5722,25 @@ function actLabel() {
   if (G.state === 'air' && !G.jumpUsed && G.ball.target && G.ctl && dist(G.ctl, G.ball.target) < JUMP_R) return 'JUMP';
   return G.ctl && G.ctl.role === 'rush' && G.ctl.pin > 0 ? 'RUSH' : 'LUNGE';
 }
+// v37: the 1-5 receiver buttons. One per receiver, numbered left to right across the field, outlined by the same open / maybe / covered rating as his ring
+// (green = open, yellow = maybe, red = covered) with a mark inside (check, dot, X) so the colors are not the only cue. The best open one gets a gold glow.
+function syncRecBtns() {
+  const o = store.load().opts;
+  const off = !!(humanO() && !G.vs && G.active && G.play && G.play.kind === 'pass' && G.state === 'live' && G.holder === qb && !G.crossed);
+  const def = !!(!humanO() && !G.vs && G.active && (advOn() || o.manualSw));
+  for (let n = 1; n <= 5; n++) {
+    const el = $('b' + n); let st = '', best = false;
+    if (off) {
+      const idx = recs.findIndex(r => r.slot === n), r = recs[idx];
+      if (r && !r.bl) { const pr = G.pred && G.pred[idx]; st = !pr ? 'n' : pr.cls === 'catch' ? (pr.s >= (pr.g || greenAt()) ? 'g' : 'y') : 'r'; best = idx === G.bestIdx && st === 'g'; }
+    } else if (n === 1 && def) st = 'sw';
+    if ((el.dataset.st || '') !== st) { if (st) el.dataset.st = st; else delete el.dataset.st; }
+    if (el.classList.contains('best') !== best) el.classList.toggle('best', best);
+  }
+  const cl = document.body.classList;
+  if (cl.contains('nosprintbtn') === btnOn()) cl.toggle('nosprintbtn', !btnOn());
+  if (cl.contains('noedge') === edgeOn()) cl.toggle('noedge', !edgeOn());
+}
 function syncActs() {
   const cl = document.body.classList, o = store.load().opts, adv = advOn();
   const simple = !adv, defMan = !humanO() && !!o.manualSw;
@@ -5685,6 +5749,7 @@ function syncActs() {
   const lab = actLabel(), bj = $('bj'); if (bj.textContent !== lab) bj.textContent = lab;
   const b1 = humanO() ? '1' : 'SW'; if ($('b1').textContent !== b1) $('b1').textContent = b1;
   G.bestIdx = humanO() && pocketOk() ? bestOpen() : -1;
+  syncRecBtns();
 }
 (function () {
   const c = $('c');
@@ -5850,7 +5915,7 @@ const TUT = {
   seq: [
     { k: 'pages', kid: [0, 1, 2] },
     { k: 'play', poss: 'user', force: { pkg: 'QuickOuts', call: 'deep' }, goal: 'pass',
-      ban: IS_TOUCH ? '<b>Practice 1 of 3 - Throw!</b> Tap <b>SNAP</b>. When a friend shows <b>OPEN</b>, tap <b>THROW</b>!' : '<b>Practice 1 of 3 - Throw!</b> Press <b>SPACE</b>. When a friend shows <b>OPEN</b>, press <b>SPACE</b> again!',
+      ban: IS_TOUCH ? '<b>Practice 1 of 3 - Throw!</b> Tap <b>SNAP</b>. When a friend shows <b>OPEN</b>, tap <b>THROW</b> or his number!' : '<b>Practice 1 of 3 - Throw!</b> Press <b>SPACE</b>. When a friend shows <b>OPEN</b>, press <b>SPACE</b> again!',
       fail: 'Almost! Wait for the OPEN sign, then throw.' },
     { k: 'pages', kid: [5] },
     { k: 'play', poss: 'user', force: { pkg: 'Spread', call: 'zone' }, goal: 'timing',
@@ -8164,7 +8229,7 @@ GROUPS[2].plays.push('ReadOption');
 
 // ---------- cards ----------
 function bCards() {
-  if (G.cfg.tutor || !(G.vs || G.poss === 'user')) return '';
+  if (!proOk() || G.cfg.tutor || !(G.vs || G.poss === 'user')) return '';
   const c = (act, key, label, cls, hint) => `<button class="pc ${cls || ''}" data-act="${act}" data-v="x"><small>${key}</small>${label}${hint ? '<em>' + hint + '</em>' : ''}</button>`;
   const hots = recs.filter(r => r.hot).length;
   return c('motion', 'Z', 'Motion', 'sp' + (G.mo ? ' off' : ''), G.mo ? 'sent' : 'read the defense') +
@@ -8188,6 +8253,7 @@ function motionStart(m) {
   return true;
 }
 function motionGo() {
+  if (!proOk()) return;
   if (!playing() || G.state !== 'pre' || !humanO() || G.cfg.tutor || G.ask || G.mo) return;
   const m = motionMan(); if (!m) return;
   motionStart(m);
@@ -8242,6 +8308,7 @@ function hotApply(i, k) {
   r.x0 = null; r.wp0 = null; r.sb = false;
 }
 function hotMenu() {
+  if (!proOk()) return;
   if (!playing() || G.state !== 'pre' || !humanO() || G.cfg.tutor || G.ask) return;
   const rs = recs.map((r, i) => ({ r, i })).filter(o => !(G.play.kind === 'run' && o.r.rb));
   const nm1 = r => (r.p ? lastName(r.p) : 'Receiver');
@@ -8264,6 +8331,7 @@ function hotRoutePick(i) {
 
 // ---------- no-huddle ----------
 function toggleNoHuddle() {
+  if (!proOk()) return;
   if (!playing() || G.state !== 'pre' || !humanO() || G.cfg.tutor || G.ask) return;
   G.nohuddle = !G.nohuddle;
   renderPlays();
@@ -8445,6 +8513,7 @@ function chUI() {
   if (show) b.innerHTML = '&#9873; Challenge the call<small>Y &middot; ' + G.flags + ' left</small>';
 }
 function challengeGo() {
+  if (!proOk()) return;
   const R = G.rev;
   if (!R || !playing() || G.state !== 'dead' || G.review || G.ask || (G.flags || 0) <= 0) return;
   G.flags--; G.rev = null; G.autoT = 0;
@@ -9567,7 +9636,10 @@ const MILES = [
   { k: 'title3', n: 'Dynasty', ic: '3*', c: 200, d: 'Win 3 championships' },
   { k: 'perfect_season', n: 'Perfect Season', ic: '17', c: 150, d: 'Finish the regular season unbeaten' },
   { k: 'mvp', n: 'League MVP', ic: 'MVP', c: 100, d: 'Have one of your players win MVP' },
-  { k: 'expansion', n: 'Founder', ic: 'NEW', c: 60, d: 'Create an expansion team' }
+  { k: 'expansion', n: 'Founder', ic: 'NEW', c: 60, d: 'Create an expansion team' },
+  { k: 'scoop', n: 'Scoop and Score', ic: 'SS', c: 30, d: 'Pick up a fumble and run it in for a touchdown' },
+  { k: 'badsave', n: 'Bad Snap Save', ic: 'BS', c: 20, d: 'Fall on your own bad snap' },
+  { k: 'muffrec', n: 'Muff Recovery', ic: 'MR', c: 20, d: 'Fall on a muffed catch' }
 ];
 const MILE_BY = Object.fromEntries(MILES.map(m => [m.k, m]));
 const DANCE_NAME = ['Arms up', 'Spin & point', 'Back flip', 'Flex dance', 'Airplane', 'Salute', 'The shuffle', 'Sky point', 'The spike', 'Spin spike', 'Ball toss', 'On my knees'];
@@ -9603,7 +9675,9 @@ function rwGive(n, why, out) { const r = rwD(); r.coins += n; r.tot += n; if (ou
 function rwMile(k, out) {
   const r = rwD(); if (r.miles[k] || !MILE_BY[k]) return false;
   r.miles[k] = { t: Date.now() }; const m = MILE_BY[k];
-  rwGive(m.c, k, out); if (out) out.miles.push({ k, n: m.n, ic: m.ic, c: m.c, d: m.d }); return true;
+  rwGive(m.c, k, out); if (out) out.miles.push({ k, n: m.n, ic: m.ic, c: m.c, d: m.d });
+  if (!PRO()) for (const id in UNL) if (UNL[id].gift === k) unlGive(id, out);      // v38: some milestones give you a play
+  return true;
 }
 
 // ---------- tracking inside a game ----------
@@ -9612,6 +9686,7 @@ function rwTrack() {
   const L = G.last, mx = G.mx; if (!mx || !L) return;
   mx.maxDef = Math.max(mx.maxDef, G.score.opp - G.score.user);
   if (L.off === 'user' && L.perfect && L.caught && !L.incomplete && !G.vs) mx.perfect++;
+  if (!G.vs && L.off === 'user') { if (L.ret && L.td && L.pick && L.pick.fum) mx.scoop = true; if (L.muffRec) mx.muffrec = true; }      // v38
 }
 const rwEligible = () => !!(G.cfg && !G.cfg.tutor && !G.vs && !G.ch && G.box);
 // how well did a player play? (a simple points formula)
@@ -9654,6 +9729,9 @@ function rwAfterGame(res) {
   if (win && res.ot) rwM('ot_win', out);
   if (mx.two) rwM('two_pt', out);
   if (mx.onside) rwM('onside', out);
+  if (mx.scoop) rwM('scoop', out);
+  if (mx.badsave) rwM('badsave', out);
+  if (mx.muffrec) rwM('muffrec', out);
   if (st.wins >= 5) rwM('wins5', out);
   if (st.wins >= 25) rwM('wins25', out);
   if (st.streak >= 5) rwM('streak5', out);
@@ -9690,8 +9768,9 @@ function rwRecapHtml(res) {
   const o = res && res.rw; if (!o) return '';
   const lines = o.lines.map(([t, n]) => `<div class="game"><span style="flex:1">${esc(t)}</span><b style="color:var(--gold)">+${n}</b></div>`).join('') + (o.sim ? `<p class="muted sm" style="margin:6px 0 0">${o.sim >= 0.95 ? 'A simulated game' : 'Part of this game was simulated'} - coins are reduced${o.sim >= 0.5 ? ', and there are no skill milestones or player cards' : ''}.</p>` : '');
   const miles = o.miles.map(m => `<div class="game" style="background:rgba(255,212,0,.08)"><span style="flex:0 0 40px;text-align:center;font-weight:900;color:#ffd400">${esc(m.ic)}</span><span style="flex:1"><b>${esc(m.n)}</b><div class="muted sm">${esc(m.d)}</div></span><b style="color:var(--gold)">+${m.c}</b></div>`).join('');
+  const gifts = (o.plays || []).map(p => `<div class="game" style="background:rgba(125,255,154,.1)"><span style="flex:0 0 40px;text-align:center;font-weight:900;color:#7dff9a">NEW</span><span style="flex:1"><b>${esc(p.n)}</b><div class="muted sm">Added to your Playbook</div></span></div>`).join('');
   const card = o.card ? `<div style="display:flex;gap:12px;align-items:center;margin-top:8px">${cardSvg(o.card, 78)}<div><b>${o.cardUp ? 'Card upgraded!' : 'New player card!'}</b><div class="muted sm">${esc(o.card.name)} &middot; ${RARITY[o.card.rar].n}</div></div></div>` : '';
-  return `<div class="card"><h3 style="margin-top:0">Coins earned <span style="float:right;color:var(--gold)">+${o.coins} &nbsp;(${rwD().coins} total)</span></h3>${lines}${miles ? '<h3>Milestones!</h3>' + miles : ''}${card}</div>`;
+  return `<div class="card"><h3 style="margin-top:0">Coins earned <span style="float:right;color:var(--gold)">+${o.coins} &nbsp;(${rwD().coins} total)</span></h3>${lines}${miles ? '<h3>Milestones!</h3>' + miles : ''}${gifts ? '<h3>New play unlocked!</h3>' + gifts : ''}${card}</div>`;
 }
 function rwSeasonHtml(S) {
   const o = S.rwEnd; if (!o) return '';
@@ -9721,7 +9800,7 @@ function shopHtml() {
         const has = rwHas(cat, k), on = eq === k, can = r.coins >= p;
         return `<div class="opt ${on ? 'on' : ''}" data-act="shopbuy" data-v="${cat}|${k}" style="${!has && !can ? 'opacity:.55' : ''}"><b>${esc(n)}</b><span>${on ? 'Equipped' : has ? 'Tap to use' : (can ? 'Buy for ' + p : p + ' coins')}</span></div>`;
       }).join('')}</div>`;
-    }).join('') + `<h3>Playbook slots</h3><div class="muted sm" style="margin-bottom:4px">Room for your own plays and calls in the Playbook Studio. You have ${pbD().slots} of ${PB_MAX_SLOTS}.</div><div class="grid g3"><div class="opt" data-act="pb_buyshop" style="${pbD().slots >= PB_MAX_SLOTS || r.coins < PB_SLOT_COST ? 'opacity:.55' : ''}"><b>+2 slots</b><span>${pbD().slots >= PB_MAX_SLOTS ? 'All unlocked' : (r.coins >= PB_SLOT_COST ? 'Buy for ' + PB_SLOT_COST : PB_SLOT_COST + ' coins')}</span></div></div>`;
+    }).join('') + unlShopHtml() + (!PRO() ? '' : `<h3>Playbook slots</h3><div class="muted sm" style="margin-bottom:4px">Room for your own plays and calls in the Playbook Studio. You have ${pbD().slots} of ${PB_MAX_SLOTS}.</div><div class="grid g3"><div class="opt" data-act="pb_buyshop" style="${pbD().slots >= PB_MAX_SLOTS || r.coins < PB_SLOT_COST ? 'opacity:.55' : ''}"><b>+2 slots</b><span>${pbD().slots >= PB_MAX_SLOTS ? 'All unlocked' : (r.coins >= PB_SLOT_COST ? 'Buy for ' + PB_SLOT_COST : PB_SLOT_COST + ' coins')}</span></div></div>`);
 }
 function rewardsHtml(S) {
   const v = rwView();
@@ -10382,7 +10461,8 @@ function a11yHtml(o) {
     <div class="opt ${o.cb ? 'on' : ''}" data-act="togcb"><b>Color-blind colors: ${o.cb ? 'On' : 'Off'}</b><span>Replaces the red and green cues (OPEN rings, goals, snap circle, kick zone, meters) with blue and orange. Team colors stay as they are.</span></div>
     <div class="opt ${o.rm ? 'on' : ''}" data-act="togrm"><b>Reduce motion: ${o.rm ? 'On' : 'Off'}</b><span>No screen shake, flashes, slow-motion beats, swinging camera cuts, the crowd wave or room sway. The pre-game show is shortened.</span></div>
     <div class="opt ${o.caps ? 'on' : ''}" data-act="togcaps"><b>Sound captions: ${o.caps ? 'On' : 'Off'}</b><span>Short text such as [Crowd cheers] or [Whistle] for the main sounds. It works even when Sound is off.</span></div></div>
-    ${IS_TOUCH ? `<div class="muted sm" style="margin:10px 0 6px">Touch layout</div><div class="grid g2">${g([['Right-handed', 'right', 'Stick on the left, buttons on the right.'], ['Left-handed', 'left', 'Stick on the right, buttons on the left.'], ['One hand (right thumb)', 'one-r', 'Stick appears anywhere on the right. SPRINT is tap on, tap off.'], ['One hand (left thumb)', 'one-l', 'The same, on the left side.']], hand, 'sethand')}</div>` : ''}
+    ${IS_TOUCH ? `<div class="muted sm" style="margin:10px 0 6px">Touch layout</div><div class="grid g2">${g([['Right-handed', 'right', 'Stick on the left, buttons on the right.'], ['Left-handed', 'left', 'Stick on the right, buttons on the left.'], ['One hand (right thumb)', 'one-r', 'Stick appears anywhere on the right. SPRINT is tap on, tap off.'], ['One hand (left thumb)', 'one-l', 'The same, on the left side.']], hand, 'sethand')}</div>
+    <div class="muted sm" style="margin:10px 0 6px">Sprint <span class="muted">(one-hand layouts always keep the SPRINT button)</span></div><div class="grid g3">${g([['Push the stick', 'edge', 'Push the stick all the way out.'], ['SPRINT button', 'button', 'A button on the right.'], ['Both', 'both', 'Either way.']], sprintMode(), 'setsprint')}</div>` : ''}
     <div class="muted sm" style="margin:10px 0 6px">Practice speed <span class="muted">(tutorial and exhibition games only)</span></div><div class="grid g3">${g([['Normal', 1], ['Slower', 0.75], ['Slowest', 0.5]], sl, 'setslow')}</div>`;
 }
 // the actions behind those rows (act() in 30-ui.js asks this first)
@@ -10396,6 +10476,7 @@ function a11yAct(a, v) {
     case 'togrm': o.rm = !o.rm; store.save(); a11yApply(); showSettings(); return true;
     case 'togcaps': o.caps = !o.caps; store.save(); a11yApply(); if (o.caps) capShow('Captions are on'); showSettings(); return true;
     case 'sethand': o.hand = v; store.save(); a11yApply(); if (typeof sprintReset === 'function') sprintReset(); showSettings(); return true;
+    case 'setsprint': o.sprintMode = v; store.save(); if (typeof sprintReset === 'function') sprintReset(); showSettings(); return true;
     case 'setslow': o.slow = +v; store.save(); showSettings(); return true;
   }
   return false;
@@ -11367,7 +11448,7 @@ function simAct(a, v) {
 }
 // ================= PHASE I: WEB RELEASE =================
 // The About screen, the "Add to Home Screen" tip, the no-3D message, a few iPad/Safari fixes and a tiny error log for support.
-const APP_VERSION = '0.9.3';
+const APP_VERSION = '0.9.5';
 const APP_STAGE = 'iPad test build';
 const WEB = { errs: [], standalone: false, ios: false, persisted: null, no3d: false, copyMsg: '' };
 
@@ -11497,14 +11578,16 @@ function kidPics() {
   // 2: steer and sprint
   const touch = IS_TOUCH;
   const steer = touch
-    ? `<g transform="translate(70 90)"><circle r="46" fill="#ffffff" fill-opacity=".14" stroke="#fff" stroke-opacity=".6" stroke-width="3"/><circle r="19" fill="#fff" fill-opacity=".55"/><g fill="#ffd400"><path d="M0-36l-7 9h14z"/><path d="M0 36l-7-9h14z"/><path d="M-36 0l9-7v14z"/><path d="M36 0l-9-7v14z"/></g></g>`
+    ? `<g transform="translate(78 92)"><circle r="48" fill="#ffffff" fill-opacity=".14" stroke="#fff" stroke-opacity=".6" stroke-width="3"/><circle r="40" fill="none" stroke="#ffd400" stroke-width="2" stroke-dasharray="4 5"/><circle cx="34" cy="-4" r="19" fill="#ffd400" fill-opacity=".9"/></g>`
     : `<g transform="translate(34 40)"><g transform="translate(46 0)">${kidKey('W')}</g><g transform="translate(0 50)">${kidKey('A')}</g><g transform="translate(46 50)">${kidKey('S')}</g><g transform="translate(92 50)">${kidKey('D')}</g></g>`;
   const sprint = touch
-    ? `<g transform="translate(250 90)"><circle r="40" fill="#ffd400" fill-opacity=".3" stroke="#ffd400" stroke-width="3"/><text y="6" text-anchor="middle" font-size="15" font-weight="900" fill="#fff" font-family="system-ui,sans-serif">SPRINT</text></g>`
+    ? `${S.defs}${S.arrow('M142 88H196')}<g transform="translate(250 90)"><rect x="-56" y="-26" width="112" height="52" rx="26" fill="#ffd400" fill-opacity=".3" stroke="#ffd400" stroke-width="3"/><text y="6" text-anchor="middle" font-size="15" font-weight="900" fill="#fff" font-family="system-ui,sans-serif">SPRINT!</text></g>`
     : `<g transform="translate(205 62)">${kidKey('SHIFT', 90)}</g>`;
   const p2 = S.field(`${steer}${sprint}`);
   // 3: throw to the OPEN friend
-  const p3 = S.field(`${S.defs}${S.man(60, 108, BLUE, '')}${S.man(236, 52, BLUE)}<g transform="translate(236 14)"><rect x="-32" y="-12" width="64" height="24" rx="12" fill="#ffd400"/><text y="5" text-anchor="middle" font-size="13" font-weight="900" fill="#241a00" font-family="system-ui,sans-serif">OPEN</text></g>${S.man(150, 112, RED)}${S.arrow('M84 96C130 40 180 36 214 46')}${S.ball(60, 126)}`);
+  const btn3 = (x, c, n) => `<g transform="translate(${x} 146)"><circle r="14" fill="#0a0e22" fill-opacity=".7" stroke="${c}" stroke-width="4"/><text y="5" text-anchor="middle" font-size="14" font-weight="900" fill="#fff" font-family="system-ui,sans-serif">${n}</text></g>`;
+  const touch3 = IS_TOUCH ? btn3(214, '#ff5c5c', 1) + btn3(250, '#ffd24d', 2) + btn3(286, '#4dff88', 3) : '';
+  const p3 = S.field(`${S.defs}${S.man(60, 108, BLUE, '')}${S.man(236, 52, BLUE)}<g transform="translate(236 14)"><rect x="-32" y="-12" width="64" height="24" rx="12" fill="#ffd400"/><text y="5" text-anchor="middle" font-size="13" font-weight="900" fill="#241a00" font-family="system-ui,sans-serif">OPEN</text></g>${S.man(150, 112, RED)}${S.arrow('M84 96C130 40 180 36 214 46')}${S.ball(60, 126)}${touch3}`);
   // 4: pull the flag
   const p4 = S.field(`${S.defs}${S.man(210, 92, BLUE, '<rect x="-3" y="14" width="6" height="14" rx="2" fill="#ffd400" transform="rotate(25 0 14)"/>')}${S.ball(224, 98)}${S.man(80, 96, RED)}${S.arrow('M104 90H176', '#ffd400')}<g transform="translate(214 152)"><text text-anchor="middle" font-size="15" font-weight="900" fill="#fff" font-family="system-ui,sans-serif">FLAG!</text><path d="M0-18V-36" stroke="#ffd400" stroke-width="3" stroke-dasharray="3 5" stroke-linecap="round"/></g>`);
   // 5: pause button + play
@@ -11521,11 +11604,11 @@ function kidAll() {
   const t = IS_TOUCH, pics = kidPics();
   return [
     { t: 'Score!', pic: pics[0], h: 'Carry the ball into the <b>end zone</b>. That is a touchdown. It is worth <b>7 points</b>. The team with the most points wins!' },
-    { t: 'Run!', pic: pics[1], h: t ? 'Use your <b>left thumb</b> to steer. Press <b>SPRINT</b> to run faster.' : 'Use <b>W A S D</b> or the arrow keys to move. Hold <b>SHIFT</b> to run faster.' },
-    { t: 'Throw!', pic: pics[2], h: t ? 'Tap <b>SNAP</b> to start the play. A friend with a gold <b>OPEN</b> sign is free. Press <b>THROW</b> to pass him the ball. Then run!' : 'Press <b>SPACE</b> to start the play. A friend with a gold <b>OPEN</b> sign is free. Press <b>SPACE</b> again to throw him the ball. Then run!' },
+    { t: 'Run!', pic: pics[1], h: t ? 'Use your <b>left thumb</b> to steer. Push the stick <b>all the way out</b> to run faster.' : 'Use <b>W A S D</b> or the arrow keys to move. Hold <b>SHIFT</b> to run faster.' },
+    { t: 'Throw!', pic: pics[2], h: t ? 'Tap <b>SNAP</b> to start the play. A friend with a <b>green</b> ring is free. Tap the <b>button with his number</b> to pass him the ball. Then run!' : 'Press <b>SPACE</b> to start the play. A friend with a gold <b>OPEN</b> sign is free. Press <b>SPACE</b> again to throw him the ball. Then run!' },
     { t: 'No tackles!', pic: pics[3], h: t ? 'Nobody gets hit in flag football. Grab the runner\'s <b>flag</b> to stop him. You are the circled player. Chase him and press the <b>big button</b>.' : 'Nobody gets hit in flag football. Grab the runner\'s <b>flag</b> to stop him. You are the circled player. Chase him and press <b>SPACE</b>.' },
     { t: 'Ready?', pic: pics[4], h: 'Pick <b>Exhibition Game</b> and choose <b>Easy</b>. The <b>II</b> button at the top right stops the game any time.' },
-    { t: 'Read the ring', pic: pics[5], h: 'Look at the ring under your friend. <b>Green</b> ring = go! <b>Red</b> ring = a defender is close.' },
+    { t: 'Read the ring', pic: pics[5], h: IS_TOUCH ? 'Look at the ring under your friend, and at his number button. <b>Green</b> = go! <b>Red</b> = a defender is close.' : 'Look at the ring under your friend. <b>Green</b> ring = go! <b>Red</b> ring = a defender is close.' },
     { t: 'Great job!', pic: pics[6], h: 'Pick <b>Exhibition Game</b> and choose <b>Easy</b> to play a real game. Have fun!' }
   ];
 }
@@ -11628,6 +11711,111 @@ function kickBadSnap(what) {
   finishPlay(who + 'BAD SNAP ON THE ' + what + '!', 'The kicker falls on it - ' + loss + ' yards back. Ball on the ' + (nextLos <= 50 ? 'own ' + nextLos : 'opponent ' + (100 - nextLos)) + ' for the other team', you ? '#ff7b7b' : '#7dff9a', { incomplete: false, driveEnded: true, nextLos, runoff: 6 });
   return true;
 }
+// ================= PHASE N (v38): earn your plays =================
+// Legacy Football starts with a few plays and you earn the rest with coins and milestones (coins are earned by playing, never bought with money).
+// EDITION: 'football' is the simple game that ships first. 'pro' keeps every play unlocked and every extra (formations, hot routes, Playbook Studio...).
+// The automatic tests set window.__forceB, which also means 'pro', so all the older tests still see the full game.
+const EDITION = window.__edition || (window.__forceB ? 'pro' : 'football');
+const PRO = () => EDITION === 'pro';
+const proOk = () => PRO() || !!G.vs;                  // the pre-snap extras: Pro, and the two-player game
+// id: 'p:<play>' for offense, 'c:<call>' for defense.   start = yours from the beginning   c = price in coins   gift = a milestone that gives it to you for free
+const UNL = {
+  'p:QuickOuts': { start: 1 }, 'p:Screen': { c: 30, gift: 'first_td' }, 'p:SlantFlat': { c: 35 }, 'p:CurlFlat': { c: 40 }, 'p:Mesh': { c: 60 },
+  'p:Verticals': { start: 1 }, 'p:CornerPost': { c: 50, gift: 'first_win' }, 'p:Spread': { c: 45 }, 'p:PlayAction': { c: 50 }, 'p:DoubleMove': { c: 70 },
+  'p:Dive': { start: 1 }, 'p:Sweep': { c: 40, gift: 'td3' }, 'p:Draw': { c: 40 }, 'p:JetSweep': { c: 55 }, 'p:QBDraw': { c: 70 },
+  'p:BubbleScreen': { c: 45 }, 'p:MiddleScreen': { c: 50 }, 'p:ReadOption': { c: 65 },
+  'c:zone': { start: 1 }, 'c:man': { start: 1 }, 'c:blitz': { c: 40, gift: 'sack3' }, 'c:deep': { c: 45, gift: 'pick2' }, 'c:cover2': { c: 50 }, 'c:spy': { c: 60 }, 'c:cblitz': { c: 70 }
+};
+const lockOn = () => !PRO() && !G.vs;                  // locks apply to your own games (not Pro, not two-player)
+const unlOwned = id => !UNL[id] || !!UNL[id].start || !!rwD().unl[id];
+const ownsPlay = n => !lockOn() || !UNL['p:' + n] || unlOwned('p:' + n);
+const ownsCall = k => !lockOn() || !UNL['c:' + k] || unlOwned('c:' + k);
+const unlName = id => id[0] === 'p' ? id.slice(2) : (CALLS[id.slice(2)] ? CALLS[id.slice(2)].n : id.slice(2));
+const unlGiftNote = id => { const u = UNL[id]; if (!u || !u.gift || !MILE_BY[u.gift]) return ''; return 'Free with the "' + MILE_BY[u.gift].n + '" milestone'; };
+function unlGive(id, out) {            // a milestone gift or a purchase: you now own it, and it gets a NEW tag
+  const r = rwD(); if (!UNL[id] || r.unl[id]) return false;
+  r.unl[id] = 1; r.newp = r.newp || {}; r.newp[id] = 1;
+  if (out) { out.plays = out.plays || []; out.plays.push({ id, n: unlName(id) }); }
+  return true;
+}
+function unlBuy(id) {                  // -> 'ok' | 'coins' | 'have' | 'none'
+  const u = UNL[id]; if (!u || u.start) return 'none';
+  const r = rwD(); if (r.unl[id]) return 'have';
+  if (r.coins < u.c) return 'coins';
+  r.coins -= u.c; unlGive(id); store.save(); return 'ok';
+}
+const unlNew = () => Object.keys(rwD().newp || {}).filter(id => rwD().unl[id]);
+function unlSeenLater() { setTimeout(unlSeen, 0); }      // the NEW tags are drawn first, then forgotten
+function unlSeen() { const r = rwD(); if (r.newp && Object.keys(r.newp).length) { r.newp = {}; store.save(); } }
+// the plays and calls a card may pick from
+const unlPlaysOf = g => g.plays.filter(ownsPlay);
+const unlOwnedMain = () => MAIN_CALLS.filter(ownsCall);
+
+// ---------- the "Playbook" screen: every play and call, locked ones greyed with a price ----------
+function unlCard(id, on, ptag) {
+  const u = UNL[id], own = !lockOn() || !u || unlOwned(id), isNew = !!(rwD().newp || {})[id], r = rwD();
+  const isP = id[0] === 'p', nm0 = unlName(id);
+  const body = isP ? (() => { const p = findPlay(nm0); return routeSvg(p) + '<b>' + esc(nm0) + '</b><span>' + esc(p.hint) + '</span>'; })() : '<b>' + esc(nm0) + '</b><span>' + esc(CALLS[id.slice(2)].t) + '</span>';
+  if (own) return `<div class="pbk ${on ? 'on' : ''}" data-act="pbpick" data-v="${esc(id.slice(2))}">${isNew ? '<i class="newtag">NEW</i>' : ''}${body}</div>`;
+  const can = r.coins >= u.c, gift = unlGiftNote(id);
+  return `<div class="pbk locked" data-act="unlask" data-v="${esc(id)}"><i class="lock">LOCKED</i>${body}<em>${u.c} coins${can ? ' - tap to unlock' : ''}</em>${gift ? `<small>${esc(gift)}</small>` : ''}</div>`;
+}
+function unlAskHtml(id) {
+  const u = UNL[id], r = rwD(), can = r.coins >= u.c, gift = unlGiftNote(id);
+  return `<div class="wrap" style="background:rgba(6,11,26,.97);min-height:100%"><h2>Unlock ${esc(unlName(id))}?</h2>
+    <div class="card" style="text-align:center"><div class="muted sm">Your coins</div><div class="big2" style="color:var(--gold)">${r.coins}</div>
+    <p>${can ? 'It costs <b>' + u.c + ' coins</b>.' : 'It costs <b>' + u.c + ' coins</b>. You need ' + (u.c - r.coins) + ' more - play a game to earn them!'}</p>${gift ? `<p class="muted sm">${esc(gift)}.</p>` : ''}</div>
+    <div class="row" style="justify-content:center;gap:10px">${can ? `<button class="b pri" data-act="unlyes" data-v="${esc(id)}">Unlock it</button>` : ''}<button class="b" data-act="unlno">${can ? 'Not now' : 'OK'}</button></div></div>`;
+}
+function unlBack() { if (ui.unlFrom === 'hub') showHub(); else showPlaybook(); }
+function unlAct(a, v) {
+  switch (a) {
+    case 'unlask': ui.unlFrom = G.active ? 'pb' : 'hub'; openScr(unlAskHtml(v)); return true;
+    case 'unlno': unlBack(); return true;
+    case 'unlyes': { const r = unlBuy(v); if (r === 'ok') { try { setToast('Unlocked ' + unlName(v) + '!'); } catch (e) {} } unlBack(); return true; }
+  }
+  return false;
+}
+// the part of the shop that sells plays and calls
+function unlShopHtml() {
+  if (PRO()) return '';
+  const r = rwD(), item = id => {
+    const u = UNL[id], own = unlOwned(id);
+    if (u.start) return '';
+    const can = r.coins >= u.c;
+    return `<div class="opt ${own ? 'on' : ''}" ${own ? '' : `data-act="unlask" data-v="${esc(id)}"`} style="${!own && !can ? 'opacity:.55' : ''}"><b>${esc(unlName(id))}</b><span>${own ? 'Yours' : (can ? 'Unlock for ' + u.c : u.c + ' coins')}</span></div>`;
+  };
+  const sect = (t, ids) => `<h3>${t}</h3><div class="grid g3">${ids.map(item).join('')}</div>`;
+  const ids = pre => Object.keys(UNL).filter(k => k.startsWith(pre));
+  return sect('Plays: Short Pass', GROUPS[0].plays.map(n => 'p:' + n)) + sect('Plays: Deep Pass', GROUPS[1].plays.map(n => 'p:' + n)) + sect('Plays: Run', GROUPS[2].plays.map(n => 'p:' + n)) + sect('Defensive calls', ids('c:'));
+}
+
+// ---------- a fresh start (once): the first time this build opens, old saves are cleared so everyone begins with the starter plays ----------
+function freshNeeded() {
+  if (PRO()) return false;
+  const d = store.load(); if (d.opts.fresh1) return false;
+  const ks = Object.keys(d).filter(k => !['opts', 'hist', 'custom', 'lastBackup', 'rw', 'pb'].includes(k));
+  return ks.length > 0 || (d.hist && d.hist.length > 0) || !!(d.rw && d.rw.tot > 0);
+}
+function freshMark() { const d = store.load(); if (!d.opts.fresh1) { d.opts.fresh1 = true; store.save(); } }
+function showFresh() {
+  openScr(`<div class="wrap"><h1 class="logo">LEGACY</h1><div class="card" style="max-width:460px;margin:20px auto;text-align:center;border-color:var(--gold)">
+    <h2 style="margin-top:0">A fresh start</h2>
+    <p style="line-height:1.5">Legacy Football has a new way to play: you start with a few plays and <b>earn the rest</b> by playing games and winning milestones.</p>
+    <p style="line-height:1.5">To make that fair for everyone, your old seasons, coins and unlocks will be cleared. Your settings stay.</p>
+    <p class="muted sm">Want to keep a copy of your old progress? Back it up first.</p>
+    <div class="menu"><button class="b" data-act="bk_open" data-v="fresh">Back up my save first</button><button class="b pri" data-act="freshgo">Start fresh</button></div></div></div>`);
+}
+function freshGo() {
+  const d = store.load(), keep = { opts: Object.assign({}, d.opts, { fresh1: true }), hist: [], custom: d.custom, lastBackup: d.lastBackup };
+  try { localStorage.removeItem(KEY + '_prev'); } catch (e) {}
+  store.replace(keep);
+  showLanding();
+}
+function freshAct(a) {
+  if (a === 'freshgo') { freshGo(); return true; }
+  return false;
+}
 
 // ================= BOOT =================
 function demoScene() {
@@ -11647,6 +11835,7 @@ webAfterBoot(gl3Init());
 requestAnimationFrame(frame);
 window.__legacy = {
   ENV, PH, photoOn, photoOff, camCycle, sigOf, titleBegin, celebrate, preMove, preSelect, preCycle, GL3, GLX, SC, gl3Apply, gl3Init, glCamera, G, cam, keys, snap, passTo, primary, manualSwitch, action, startGame, endGameFlow, togglePause, act, ui, store, TUT,
+  get sprintHeld() { return sprintHeld; }, get edgeSprint() { return edgeSprint; },
   get qb() { return qb; }, get RP() { return RP; }, get recs() { return recs; }, get defense() { return defense; }, get offense() { return offense; },
   captureSave, savedInfo, goalsCheck, commitGoals, goalsInit, GOALS, playComment, armAuto, autoNext, tapThrow, syncActs, getRecs: () => recs, throwBest, bestOpen, actLabel, pocketOk, advOn, P, ensureContracts, rollContracts, expiringList, contractItems, leaveOdds, dealYrs, movesHtml, movesAct, topSigns, faAvail, markHot, dropHot, HOT_OVR, signConfirm, draftSuggest, draftAuto, draftQuick, retireChance, MALE, FIRST, resumeGame, saveQuit, predictThrow, judge, LINE, setupLine, DIFF, TEAMS, TM, LEN, season,
   league: { newSeason, afterUserRegGame, afterUserPoGame, advanceBye, userGame, userPoGame, curRound, simGame, sortIds },
@@ -11881,6 +12070,33 @@ window.__legacy = {
   startReturn,
   retBall,
   offKey,
+  sprintMode,
+  passSlot,
+  syncRecBtns,
+  joy,
+  readInput,
+  ownsPlay,
+  ownsCall,
+  unlOwned,
+  unlBuy,
+  unlGive,
+  UNL,
+  rwMile,
+  pickFromGroup,
+  showPlaybook,
+  freshNeeded,
+  unlPlaysOf,
+  GROUPS,
+  EDITION,
+  PRO,
+  rwInitGame,
+  rwRecapHtml,
+  unlNew,
+  cycleForm,
+  toggleProt,
+  unlAct,
+  freshAct,
+  KEY,
   /*B-EXPORTS*/
 };
 })();
