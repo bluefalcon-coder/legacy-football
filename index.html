@@ -425,10 +425,12 @@ let mem = null;
 const store = {
   load() {
     if (mem) return mem;
+    const autoTest = typeof navigator !== 'undefined' && !!navigator.webdriver && !window.__forceWild;     // automatic tests keep the old (quiet) defaults unless a test sets window.__forceWild
     let d = null;
     try { d = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { d = null; }
     mem = d && typeof d === 'object' ? d : {};
-    mem.opts = Object.assign({ diff: 'easy', routes: true, sound: true, vol: 0.7, replay: true, fx: true, autoSwitch: false, manualSw: false, adv: false, fastPace: true, music: true, gfx: '3d', low: false, cam3: 'normal', returns: false, haptics: true, full: true, fumbles: false, seenTut: false }, mem.opts || {});
+    mem.opts = Object.assign({ diff: 'easy', routes: true, sound: true, vol: 0.7, replay: true, fx: true, autoSwitch: false, manualSw: false, adv: false, fastPace: true, music: true, gfx: '3d', low: false, cam3: 'normal', returns: !autoTest, haptics: true, full: true, fumbles: !autoTest, seenTut: false }, mem.opts || {});
+    if (!mem.opts.wild1) { mem.opts.wild1 = true; if (!autoTest) { mem.opts.fumbles = true; mem.opts.returns = true; } }      // v36: fumble returns, bad snaps and muffs are on for everyone once; Settings can turn them off
     mem.hist = mem.hist || [];
     return mem;
   },
@@ -1998,7 +2000,7 @@ const reachOf = d => (d.lunge > 0 ? 1.9 : 1.05) * reachMul(d);
 function maybeFumble(Hd, d) {
   if (G.cfg.tutor || G.cfg.noFumble || store.load().opts.fumbles === false || !G.play || G.play.kind === 'ret' || G.loose) return false;
   const base = G.state === 'live' ? 0.03 : 0.018;
-  const p = base * (1 - 0.6 * fr(rt(Hd, 'hnd'))) * (1 + 0.5 * fr(rt(d, 'tkl'))) * (offPlan() === 'ball' ? 0.5 : 1);
+  const p = base * (1 - 0.6 * fr(rt(Hd, 'hnd'))) * (1 + 0.5 * fr(rt(d, 'tkl'))) * (offPlan() === 'ball' ? 0.5 : 1) * (TUNE.wild == null ? 1 : TUNE.wild);
   if (Math.random() >= p) return false;
   startLoose(Hd, d);
   return true;
@@ -2051,15 +2053,19 @@ function recoverLoose(r, oob) {
   const offSide = offKey(), z = clamp(L.z, 1, GOAL + 1);
   G.fumInfo = { by: L.by.num, rec: r.num, lost: !oob && r.side !== offSide };
   G.ball.y = 1.3;
+  const tag = L.label || (L.muff ? 'MUFFED' : 'FUMBLE');
   if (!G.fumInfo.lost) {
     G.holder = oob ? L.by : r; G.state = 'run';
     sfx.catch();
-    endPlay(oob ? clamp(L.z, 1, GOAL - 0.5) : z, oob ? 'FUMBLE - OUT OF BOUNDS' : 'FUMBLE - RECOVERED', {});
+    endPlay(oob ? clamp(L.z, 1, GOAL - 0.5) : z, oob ? tag + ' - OUT OF BOUNDS' : tag + ' - RECOVERED', {});
+  } else if (r.side === 'u' && !G.vs && returnsOn() && !G.cfg.tutor && z < GOAL - 0.5 && G.play && G.play.kind !== 'ret') {
+    G.fumInfo = null; startPickReturn(r, { x: L.x, z, num: L.by.num }, true);       // your team scoops it up: run it back
   } else fumbleLost(L, r, z);
 }
 function fumbleLost(L, r, z) {
   G.holder = null; sfx.whistle(); sfx.bad(); G.stats.plays++;
   const you = G.poss === 'user' && !G.vs;
+  if (you && !L.muff && !G.cfg.tutor && returnsOn() && z < GOAL - 0.5 && cpuScoop(L, r, z)) return;
   const touchback = z >= GOAL;
   const nextLos = G.ot ? 50 : touchback ? 20 : clamp(Math.round(100 - z), 1, 99);
   G.last = { off: G.poss, gain: 0, incomplete: false, td: false, turnover: true, caught: G.caught, car: L.by.num, def: r.num, qb: qb ? qb.num : null, fum: true, fumLost: true, spot: z, run: G.play && G.play.kind === 'run', air: G.airYds };
@@ -2068,7 +2074,7 @@ function fumbleLost(L, r, z) {
   try { announce('Fumble! ' + aName(r) + ' recovers it.', 3, 'play'); } catch (e) {}
   you ? crowdGroan(0.9) : crowdCheer(0.8);
   const where = touchback ? 'Touchback - ball at the 20' : 'Ball on the ' + (nextLos <= 50 ? 'own ' + nextLos : 'opponent ' + (100 - nextLos)) + ' for the other team';
-  finishPlay(G.vs ? 'FUMBLE! ' + nm(offKey() === 'u' ? 'x' : 'u') + ' recover' : you ? 'FUMBLE - LOST!' : 'FUMBLE! ' + (G.poss === 'opp' ? 'You recover' : nm('x') + ' recover'), where, you ? '#ff7b7b' : '#7dff9a', { incomplete: false, driveEnded: true, nextLos, runoff: 6 });
+  finishPlay(G.vs ? 'FUMBLE! ' + nm(offKey() === 'u' ? 'x' : 'u') + ' recover' : you ? (L.label || (L.muff ? 'MUFFED' : 'FUMBLE')) + ' - LOST!' : 'FUMBLE! ' + (G.poss === 'opp' ? 'You recover' : nm('x') + ' recover'), where, you ? '#ff7b7b' : '#7dff9a', { incomplete: false, driveEnded: true, nextLos, runoff: 6 });
 }
 
 let fast = false;
@@ -3052,23 +3058,36 @@ function doPunt(seat) {
 }
 function punt() {
   const you = G.poss === 'user', who = G.vs ? nm(offKey()) + ' ' : (you ? '' : nm('x') + ' ');
-  const kp = kickerFor(offKey()), len = Math.round(rnd(30, 46) + 0.12 * (rt(kp, 'pow') - 70) - wxPunt()), land = G.los + len;
+  const kp = kickerFor(offKey());
+  let len = Math.round(rnd(30, 46) + 0.12 * (rt(kp, 'pow') - 70) - wxPunt()), snapNote = '';
+  if (!G.cfg.tutor && Math.random() < wildP(0.012)) {                                    // a bad snap on the punt
+    if (Math.random() < 0.45) { kickBadSnap('PUNT'); return; }
+    len = Math.round(rnd(8, 18)); snapNote = 'BAD SNAP - ';
+  }
+  const land = G.los + len;
   sfx.throw();
   G.last = { off: G.poss, punt: true, plen: len, gain: 0, incomplete: false, td: false, turnover: false, caught: false };
   G.stats.plays++;
   let big, sub, nextLos;
-  if (land >= 100) { big = who + 'PUNT - TOUCHBACK'; nextLos = 20; sub = len + ' yards into the end zone'; }
-  else { nextLos = Math.max(1, Math.round(100 - land)); big = who + 'PUNT - ' + len + ' YARDS'; sub = 'Ball on the ' + (nextLos <= 50 ? 'own ' + nextLos : 'opponent ' + (100 - nextLos)) + ' for the other team'; }
+  if (land >= 100) { big = who + snapNote + 'PUNT - TOUCHBACK'; nextLos = 20; sub = len + ' yards into the end zone'; }
+  else { nextLos = Math.max(1, Math.round(100 - land)); big = who + snapNote + 'PUNT - ' + len + ' YARDS'; sub = 'Ball on the ' + (nextLos <= 50 ? 'own ' + nextLos : 'opponent ' + (100 - nextLos)) + ' for the other team'; }
   if (!you && land < 100 && !G.cfg.tutor && returnsOn()) {     // the CPU punts to you: you take the return
     if (!G.ot) G.clock = Math.max(1, G.clock - 4);
     startReturn('punt', { landZ: nextLos, fromZ: 100 - G.los, big, sub: len + ' yards' });
     return;
   }
   sfx.whistle(); sfx.kick(); fxKick(G.los, Math.min(land, 108), 0, 9, 1.4);
+  if (you && land < 100 && !G.cfg.tutor && !G.vs && returnsOn() && Math.random() < wildP(0.04)) {   // their returner muffs your punt and you fall on it
+    G.last.muffRec = true; G.los = clamp(land, 1, 99); G.down = 1; G.firstDown = Math.min(GOAL, G.los + 10);
+    sfx.catch(); crowdCheer(0.8);
+    finishPlay(big + ' - MUFFED! YOU RECOVER', 'Your ball, first down on the ' + (G.los <= 50 ? 'own ' + Math.round(G.los) : 'opponent ' + Math.round(100 - G.los)), '#7dff9a', { incomplete: false, driveEnded: false, runoff: 6 });
+    return;
+  }
   finishPlay(big, sub, '#9fd8ff', { incomplete: false, driveEnded: true, runoff: 6, nextLos });
 }
 function startFG(seat) {
   if (!playing() || G.state !== 'pre' || !humanO() || !seatOffOk(seat) || G.cfg.tutor) return;
+  if (Math.random() < wildP(0.01)) { hidePlays(); kickBadSnap('FIELD GOAL'); return; }
   const d = Math.round(110 - G.los), K = kickerFor(offKey());
   G.state = 'kick';
   G.kick = { dist: d, K, maxD: kickMaxD(K), hw: kickHW(d, K), t: 0, t0: rnd(0, 1.6), aim: 0, wind: G.wind || 0, dir: 0 };
@@ -3150,6 +3169,7 @@ function cpuFourth() {
   else act = G.ot ? 'go' : 'punt';
   if (act === 'go') return false;
   if (act === 'fg') {
+    if (Math.random() < wildP(0.01)) { kickBadSnap('FIELD GOAL'); return true; }
     const mul = { easy: 0.8, medium: 0.92, hard: 1 }[G.cfg.diff] || 0.9;
     const ok = Math.random() < fgChance(d - (maxD - 62)) * mul * (1 + 0.12 * fr(rt(K, 'acc')));
     const left = Math.random() < 0.5, short = !ok && d > maxD * 0.9;
@@ -3568,6 +3588,7 @@ function retBall(dt) {
   if (u < 1) return false;
   const r = G.ctl, miss = Math.hypot(r.x - K.x1, r.z - K.z1);
   if (miss > 4.2) { G.holder = null; endPlay(K.z1, 'NO CATCH - BALL DOWNED', { fair: true }); return true; }
+  if (muffRoll(r, K)) return false;
   G.holder = r; G.state = 'run'; G.caught = true; G.handed = false;
   r.vx *= 0.5; r.vz *= 0.5;
   b.x = r.x; b.z = r.z + 0.25; b.y = 1.3;
@@ -3605,7 +3626,7 @@ function endReturn(z, text, opts, Hd0) {
   const last = { run: true, ret: true, air: 0, off: 'user', gain: 0, incomplete: false, td: false, turnover: false, caught: true, fair: !!opts.fair, pick: pick || null };
   if (!opts.fair && z >= GOAL) {
     G.score.user += 7; sfx.td();
-    big = pick ? 'PICK SIX!' : 'RETURN TOUCHDOWN!'; sub = '+7'; color = '#ffd400'; driveEnded = true; last.td = true; last.gain = GOAL - start;
+    big = pick && pick.fum ? 'SCOOP AND SCORE!' : pick ? 'PICK SIX!' : 'RETURN TOUCHDOWN!'; sub = '+7'; color = '#ffd400'; driveEnded = true; last.td = true; last.gain = GOAL - start;
     if (Hd0) fxPlayEnd('td', Hd0, last.gain);
   } else {
     G.los = clamp(z, 1, 99); G.down = 1; G.firstDown = Math.min(GOAL, G.los + 10);
@@ -3613,7 +3634,7 @@ function endReturn(z, text, opts, Hd0) {
     const spot = G.los <= 50 ? 'your own ' + Math.round(G.los) : 'the opponent ' + Math.round(100 - G.los);
     if (opts.fair) { big = text; sub = 'Ball on ' + spot; color = '#9fd8ff'; }
     else {
-      big = (pick ? 'INTERCEPTION' : 'RETURN') + (/OUT OF BOUNDS/.test(text) ? ' - OUT OF BOUNDS, ' : ' - ') + (gain >= 0 ? '+' : '') + Math.round(gain) + ' YARDS';
+      big = (pick && pick.fum ? 'FUMBLE RETURN' : pick ? 'INTERCEPTION' : /MUFF/.test(text) ? 'MUFF RECOVERED' : 'RETURN') + (/OUT OF BOUNDS/.test(text) ? ' - OUT OF BOUNDS, ' : ' - ') + (gain >= 0 ? '+' : '') + Math.round(gain) + ' YARDS';
       sub = 'Ball on ' + spot; color = gain >= 15 ? '#7dff9a' : '#fff';
       if (Hd0 && /FLAG PULLED/.test(text)) fxPlayEnd('pull', Hd0, gain);
       else if (gain >= 15) { crowdCheer(0.5); }
@@ -3642,7 +3663,7 @@ function coverAI(d, dt) {
 
 // ---------- interception returns ----------
 // When a defender you control (or any teammate of yours) picks the ball off, you run it back. The field is mirrored so your team runs toward z = 100.
-function startPickReturn(d, rec) {
+function startPickReturn(d, rec, fum) {
   const qb0 = qb, mir = e => { e.z = 100 - e.z; e.vz = -e.vz; e.tz = 100 - e.tz; e.zz = 100 - e.zz; };
   const zNew = clamp(100 - rec.z, 1, 99);
   const mine = defense.filter(e => e !== d), theirs = offense.filter(e => e !== center);
@@ -3655,15 +3676,15 @@ function startPickReturn(d, rec) {
   G.pickGrace = 0.8;
   qb = d; recs = [d]; center = mk('u', 'o', 0, -60, 55, 'c');
   offense = [d, ...blk]; defense = chase;
-  G.pickInfo = { def: d.num, qb: qb0 ? qb0.num : null, tgt: rec.num };
+  G.pickInfo = fum ? { fum: true, def: d.num, car: rec.num } : { def: d.num, qb: qb0 ? qb0.num : null, tgt: rec.num };
   G.poss = 'user'; G.los = zNew; G.retStart = zNew; G.down = 1; G.firstDown = Math.min(GOAL, zNew + 10);
   G.play = { kind: 'ret', n: 'Return', hint: '', hand: 0 }; G.pkg = 'Return'; G.call = 'zone';
   G.ctl = d; G.ctl2 = null; G.holder = d; G.caught = true; G.handed = false; G.crossed = false; G.faked = false; G.dpiDone = false; G.pred = null;
   G.state = 'run'; G.t = 0; G.rpReady = null; G.airYds = 0;
   G.ball.target = null; G.ball.x = d.x; G.ball.z = d.z; G.ball.y = 1.3;
-  anim(d, 'catch', 0.5); fxText(d.x, d.z, 'INTERCEPTED!', '#7dff9a', 1.3, 3.4); fxShake(0.35); fxPunch(0.5); crowdCheer(0.8); sfx.catch();
+  anim(d, 'catch', 0.5); fxText(d.x, d.z, fum ? 'RECOVERED!' : 'INTERCEPTED!', '#7dff9a', 1.3, 3.4); fxShake(0.35); fxPunch(0.5); crowdCheer(0.8); sfx.catch();
   stamina = Math.max(stamina, 0.7);
-  setMsg('', 'INTERCEPTED! Run it back - Shift to sprint, Space to juke'); warnT = 2.2;
+  setMsg('', (fum ? 'FUMBLE RECOVERED!' : 'INTERCEPTED!') + ' Run it back - Shift to sprint, Space to juke'); warnT = 2.2;
   rpReset(); camSnap();
 }
 
@@ -3705,7 +3726,13 @@ function boxRecord(L, big, applied, o) {
     if (L.good) { S.fg++; what = (L.fgd || 0) + '-yard field goal by ' + pn(sd, 3); }
   } else if (L.ret) {
     S.rets++; S.retYds += L.gain || 0;
-    if (L.pick) {
+    if (L.fumRet || (L.pick && L.pick.fum)) {
+      const fr_ = L.fumRet || { car: L.pick.car, def: L.pick.def };
+      D.to++; D.fumL++; S.fumRec++;
+      if (fr_.car != null) { const fb = bxP(ds, fr_.car); fb.fum++; fb.fumL++; }
+      if (fr_.def != null) bxP(sd, fr_.def, 'd').fr++;
+      if (L.td) { S.td++; what = 'Fumble return'; }
+    } else if (L.pick) {
       D.att++; D.ints++; D.to++; S.picks++;
       if (L.pick.qb) { const q = bxP(ds, L.pick.qb); q.pAtt++; q.pInt++; }
       if (L.pick.def) bxP(sd, L.pick.def, 'd').ic++;
@@ -4205,11 +4232,11 @@ const HOWTO = [
   { t: 'Clock, downs & overtime', h: `<ul class="tips"><li>Four quarters of 2 minutes. The clock stops on incomplete passes and runs a little between snaps.</li><li>4 downs to gain 10 yards. Fail on 4th down and the other team takes over where the drive ended.</li><li>After a score the other team starts at their 25. After a <b>turnover</b> - an interception, a fumble or a turnover on downs - they take over <b>right where the play ended</b>.</li><li>Tied after four quarters: <b>overtime</b>. Each team gets a drive from midfield. In the playoffs, overtime continues until someone wins.</li></ul>` },
   { t: 'Calling plays', h: `<ul class="tips"><li>Before every snap pick one of three cards (or press <span class="keys"><span>1</span></span> <span class="keys"><span>2</span></span> <span class="keys"><span>3</span></span>): <b>Short Pass</b> (quick and safe), <b>Deep Pass</b> (big gains, riskier) or <b>Run</b>. The game picks the exact play for you - the faint lines show the routes. The highlighted card is a good suggestion for the down and distance.</li><li>Two more cards: <b>Trick</b> (2 per game - a surprise play that fools a defense expecting the usual) and <b>Audible</b> (2 per game - switches to the play that beats the coverage you can see).</li><li>On a run you hand off after a moment, or press <span class="keys"><span>Space</span></span> to hand off right away - then you steer the runner. When a gap opens in the line, a ring shows up - press <span class="keys"><span>Space</span></span> (HIT IT!) as it closes to burst through for extra yards.</li><li>With <b>Advanced controls</b> on: <span class="keys"><span>F</span></span> <b>pump fake</b> - the coverage can freeze for a moment, then throw. <span class="keys"><span>X</span></span> <b>throw away</b> - safe only when a defender is close; with nobody near it is <b>intentional grounding</b> (5 yards back and you lose the down).</li><li><b>Juke chains:</b> beat two defenders with jukes in the same play and you get a short burst of speed.</li></ul>` },
   { t: 'Kicking, timeouts & lining up', h: `<ul class="tips"><li>On <b>4th down</b> you can go for it or <b>punt</b> (<span class="keys"><span>U</span></span>). You can try a <b>field goal</b> (<span class="keys"><span>K</span></span>, worth 3) on <b>any down, from anywhere</b> - it is always your choice.</li><li>The kick: the posts show on the field and in a little window. The <b>wind</b> pushes the ball, so <b>aim</b> with <span class="keys"><span>A</span></span> / <span class="keys"><span>D</span></span> until the dot sits between the posts, then hit <span class="keys"><span>Space</span></span> when the marker is in the green. A kicker's <b>Leg</b> sets how far he can reach (a kick that is too long falls short) and his <b>Accuracy</b> makes the green wider. A miss gives the other team the ball at the spot of the kick.</li><li>Each team has <b>2 timeouts per half</b>. Press <span class="keys"><span>T</span></span> before a snap to give back the time the last play burned, or when the clock hits 0:00 at the end of the 2nd or 4th quarter.</li><li><b>No penalties:</b> there are no flags in this game - no offside, holding or interference. Play hard.</li><li><b>Line up your team:</b> before the snap, <b>tap a teammate</b> (or press <span class="keys"><span>Tab</span></span>) to take him, then move him with the stick or WASD. On offense you can slide a receiver wider or tighter and his route moves with him, and the coverage follows. On defense you can shift any defender. Nobody can cross the line of scrimmage.</li><li><b>The line:</b> the pass rush fires at the snap, and each rusher is matched with a blocker. The bar between them shows who is winning: <b>green</b> = the blocker is holding him up, <b>red</b> = the rusher is getting through. A far better rusher can force a sack or a <b>double team</b>; a far better blocker walls him off completely. Linemen are not hitting anyone - they just shield the quarterback. Sign or trade for strong <b>Blocking</b> linemen to give yourself more time and open lanes for runs.</li><li><b>Playing the line on defense:</b> press <span class="keys"><span>E</span></span> to switch to a pass rusher. His blocker holds him up - lean toward the quarterback to wear the block down, or press <span class="keys"><span>Space</span></span> for a <b>rush move</b>: toward the quarterback is a bull rush, sideways is a speed rush, standing still is a swim. Switching to a different move than your last one works best, and a better rusher succeeds more often.</li><li><b>Before the snap on offense (Advanced controls):</b> <span class="keys"><span>V</span></span> changes the <b>formation</b> (wide: more room; bunched: close together, quick throws) and <span class="keys"><span>G</span></span> turns on <b>max protect</b> (your last receiver stays in to block a rusher, so you have one fewer target).</li><li>Games can also be played <b>11v11</b> (chosen when you start a season or an exhibition): five receivers (keys 1-5), a blocking line and a full defense.</li></ul>` },
-  { t: 'Kick returns', h: `<ul class="tips"><li><b>Kick returns and fumbles are off by default</b> (turn them on when you start a game or in Settings). When on: when the CPU <b>kicks off or punts to you</b>, you are the returner. A white circle shows where the ball will land: <b>move under it</b> and you catch it automatically.</li><li>Then run it back: <span class="keys"><span>WASD</span></span> to move, <span class="keys"><span>Shift</span></span> to sprint, <span class="keys"><span>Space</span></span> to juke. Your teammates block for you and slow down the tacklers.</li><li>Not feeling it? Press <span class="keys"><span>Space</span></span> (or JUKE) <b>before you catch it</b> for a <b>fair catch</b>: nobody tackles you and you start where the ball landed.</li><li>When you punt or kick off, the return happens by itself.</li><li><b>Interceptions are returns too.</b> When you (or a teammate) pick off a pass, you take the ball and run it back toward the other end zone - your teammates block, and the quarterback is the last man to beat. Get all the way and it is a <b>pick six</b>.</li></ul>` },
+  { t: 'Kick returns', h: `<ul class="tips"><li><b>Kick returns are on by default</b> (you can turn them off in Settings). When on: when the CPU <b>kicks off or punts to you</b>, you are the returner. A white circle shows where the ball will land: <b>move under it</b> and you catch it automatically.</li><li>Then run it back: <span class="keys"><span>WASD</span></span> to move, <span class="keys"><span>Shift</span></span> to sprint, <span class="keys"><span>Space</span></span> to juke. Your teammates block for you and slow down the tacklers.</li><li>Not feeling it? Press <span class="keys"><span>Space</span></span> (or JUKE) <b>before you catch it</b> for a <b>fair catch</b>: nobody tackles you and you start where the ball landed.</li><li>When you punt or kick off, the return happens by itself.</li><li><b>Muffs:</b> now and then a returner drops the ball. It is a live ball - get on it before the kicking team does!</li><li><b>Interceptions are returns too.</b> When you (or a teammate) pick off a pass, you take the ball and run it back toward the other end zone - your teammates block, and the quarterback is the last man to beat. Get all the way and it is a <b>pick six</b>.</li></ul>` },
   { t: 'Replays, sound & effects', h: `<ul class="tips"><li>After a <b>touchdown, turnover or big play</b> a <b>Replay</b> button appears (or press <span class="keys"><span>R</span></span>). You get a slow-motion replay from behind, then a low angle. <span class="keys"><span>Space</span></span> or a tap skips it.</li><li>On defense a <b>thin yellow ring</b> shows the reach for pulling a flag, and the <b>big ring</b> appears when you lunge. When the ball is in the air, <b>rings around the landing spot</b> show how close your player must be: the outer one breaks the pass up, the inner one can intercept it.</li><li>The crowd gets louder in big moments. Press <span class="keys"><span>M</span></span> to mute. Volume, replays and screen shake can be changed in Settings.</li><li><b>Hot streaks:</b> three good plays in a row heats you up; five and you are <b>on fire</b>. A red glow at the screen edge means a rusher is closing in on your quarterback. At the end of a game, press <span class="keys"><span>R</span></span> to watch the <b>Play of the Game</b>.</li><li>The <b>box score</b> shows after every game, and your season keeps running totals on the <b>Stats &amp; records</b> screen. During a game, open it from the pause menu (<b>Game stats</b>).</li></ul>` },
   { t: 'Your season', h: `<ul class="tips"><li>Pick a season length: <b>Short</b> (6 games), <b>Medium</b> (10) or <b>Long</b> (14).</li><li>Games between two computer teams are simulated quietly behind the scenes. <b>Your games are always played by you.</b></li><li>The best teams in each conference reach the <b>playoffs</b> - single elimination, seeded by record, with byes for top seeds in longer seasons.</li><li>Win the conference final and the <b>Championship</b> to lift the trophy. Your titles are saved in the Trophy Case.</li><li><b>Game goal:</b> every game has one small goal (like 'Gain 20+ yards on one play') shown before the snap. A goal you hit earns one of your players +1 rating when the season rolls over. You also get a <b>season goal</b> (shown on your home screen) for a bonus at the end of the year, and games that matter show small <b>stakes</b> tags.</li><li><b>Assist mode:</b> in Settings, <b>Assist</b> makes passes and tackles a bit more forgiving. A team that is trailing badly also gets a little help automatically.</li><li><b>Fast pace:</b> ordinary plays move on by themselves after a moment - tap to go sooner. You can turn this off in Settings.</li><li>Progress saves automatically in this browser after every game.</li><li><b>Home screen:</b> your season opens on a home screen with a few big buttons (play, roster, schedule, roster moves). Tap <b>More</b> for stats, news, my team, save &amp; backup and settings. Each screen has a <b>Home</b> button to come back.</li><li><b>Save &amp; quit:</b> need to stop in the middle of a game? Open the pause menu (Esc, or the pause button) and choose <b>Save &amp; quit</b>. Next time, press <b>Resume game</b> and you restart at the beginning of the play you were on. Two-player games can't be saved.</li></ul>` },
   { t: 'Two players', h: `<ul class="tips"><li>Pick <b>Exhibition Game - 2 Players</b> to play a friend on one screen. The team with the ball is run by one player, the defense by the other, and the roles swap on every change of possession.</li><li><b>Left seat</b> (WASD side): <span class="keys"><span>WASD</span></span> move, <span class="keys"><span>Shift</span></span> sprint, <span class="keys"><span>Space</span></span> snap / juke / lunge, <span class="keys"><span>1</span><span>2</span><span>3</span><span>4</span></span> pick a card or throw, <span class="keys"><span>E</span></span> switch defender, <span class="keys"><span>F</span></span> fake, <span class="keys"><span>X</span></span> throw away, <span class="keys"><span>U</span></span> punt, <span class="keys"><span>K</span></span> field goal.</li><li><b>Right seat</b> (arrows side): <span class="keys"><span>arrows</span></span> move, <span class="keys"><span>Right Shift</span></span> sprint, <span class="keys"><span>Enter</span></span> snap / juke / lunge, <span class="keys"><span>Num 1-5</span></span> (or <span>6</span><span>7</span><span>8</span><span>9</span><span>0</span>) pick or throw, <span class="keys"><span>/</span></span> switch, <span class="keys"><span>.</span></span> fake, <span class="keys"><span>,</span></span> throw away, <span class="keys"><span>[</span></span> punt, <span class="keys"><span>]</span></span> field goal.</li><li>The <b>offense</b> picks a play card, the <b>defense</b> picks a coverage, then the offense snaps. A <b>P1</b> or <b>P2</b> tag floats over each player you steer.</li><li>On a <b>phone</b> it is pass-and-play: the touch controls belong to whoever has the ball; the other player taps a defense card, and the computer moves the defenders. If a keyboard is connected, the defender is yours to steer.</li></ul>` },
-  { t: 'Players, fumbles & trades', h: `<ul class="tips"><li>Every player has a <b>name and ratings</b> (40 to 99, with 70 about average). Ratings change how they play: <b>Speed</b> makes a player faster, <b>Hands</b> help a receiver hang on when a defender is close, <b>Arm</b> makes a quarterback's throws faster, <b>Accuracy</b> makes his throws harder to knock down, <b>Elusive</b> makes a juke work better, <b>Flag pulling</b> stretches a defender's reach, <b>Coverage</b> helps a defender stop passes, <b>Blocking</b> slows the pass rush and <b>Leg</b> is how far a kicker can kick. The rings under your receivers already count all of this, so they stay honest.</li><li>The name of the player you control shows over his head, and the box score lists players by name.</li><li><b>Fumbles:</b> now and then a flag pull pops the ball loose (a runner with good Hands loses it less). Both teams race for the ball - get to it first! A fumble the other team recovers is a turnover right where the ball ended up.</li><li>If a quarterback runs past the line of scrimmage and gets his flag pulled, it counts as a <b>run</b>, not a sack.</li><li><b>Roster:</b> the Roster screen has three short lists (Offense, Defense, Kicking). A \u25BC marks your weakest starters, and the top card names your biggest need. Tap any player for his full ratings, stats and two buttons: <b>Shop</b> (trade offers) and <b>Swap for a free agent</b>.</li><li><b>Trades:</b> tap <b>Shop</b> on a player and you get up to 3 offers that other teams will accept - always the same kind of position. Pick one and confirm, or keep your player. Each week every team needs one kind of player and pays extra for him, so you can sometimes get a better player than you give. Trades close in the playoffs.</li><li><b>Rookie draft:</b> before each new season (after your first), a class of young rookies is drafted, worst teams first. You get two picks. The game shows the 3 rookies who would help you most - tap <b>Draft</b>, or tap <b>Pick for me</b>. Every pick replaces one of your players in the same kind of job, and that player goes to the free-agent pool. Rookies keep improving for their first couple of seasons.</li><li><b>Free agents:</b> the Sign tab shows the 5 free agents who would help you most. Tap Sign and you see exactly who he replaces before you confirm. The best ones are <b>hot</b>: sign them before your next game or they sign with another team.</li><li><b>Contracts - no money:</b> there are no salaries and no cap. Every player has an age and years left on his deal. When a deal ends, most players stay on a new 2-year deal. But a player on a losing team, or a star who wants a bigger role, may <b>leave</b> - the best free agent in his group takes his spot right away, and he will not sign back with you that year. See who stayed and who left in <b>Roster moves &rarr; Expiring</b>, and tap <b>Let go</b> if you want to replace a player who is staying. Rookies sign 3-year deals. Older players eventually <b>retire</b>.</li><li>After each season your players change: a good season, an award or a title helps them grow, a quiet one doesn't.</li></ul>` },
+  { t: 'Players, fumbles & trades', h: `<ul class="tips"><li>Every player has a <b>name and ratings</b> (40 to 99, with 70 about average). Ratings change how they play: <b>Speed</b> makes a player faster, <b>Hands</b> help a receiver hang on when a defender is close, <b>Arm</b> makes a quarterback's throws faster, <b>Accuracy</b> makes his throws harder to knock down, <b>Elusive</b> makes a juke work better, <b>Flag pulling</b> stretches a defender's reach, <b>Coverage</b> helps a defender stop passes, <b>Blocking</b> slows the pass rush and <b>Leg</b> is how far a kicker can kick. The rings under your receivers already count all of this, so they stay honest.</li><li>The name of the player you control shows over his head, and the box score lists players by name.</li><li><b>Fumbles and wild plays:</b> now and then a flag pull pops the ball loose (a runner with good Hands loses it less), or the snap goes bad - sailing over the quarterback or skipping along the ground. Both teams race for the ball - get to it first! If <b>your</b> team recovers a fumble, you pick it up and <b>run it back</b> - get all the way for a scoop and score. If they recover yours, they run it back by themselves. A fumble the other team recovers is a turnover. Bad snaps can also happen on punts and field goals.</li><li>If a quarterback runs past the line of scrimmage and gets his flag pulled, it counts as a <b>run</b>, not a sack.</li><li><b>Roster:</b> the Roster screen has three short lists (Offense, Defense, Kicking). A \u25BC marks your weakest starters, and the top card names your biggest need. Tap any player for his full ratings, stats and two buttons: <b>Shop</b> (trade offers) and <b>Swap for a free agent</b>.</li><li><b>Trades:</b> tap <b>Shop</b> on a player and you get up to 3 offers that other teams will accept - always the same kind of position. Pick one and confirm, or keep your player. Each week every team needs one kind of player and pays extra for him, so you can sometimes get a better player than you give. Trades close in the playoffs.</li><li><b>Rookie draft:</b> before each new season (after your first), a class of young rookies is drafted, worst teams first. You get two picks. The game shows the 3 rookies who would help you most - tap <b>Draft</b>, or tap <b>Pick for me</b>. Every pick replaces one of your players in the same kind of job, and that player goes to the free-agent pool. Rookies keep improving for their first couple of seasons.</li><li><b>Free agents:</b> the Sign tab shows the 5 free agents who would help you most. Tap Sign and you see exactly who he replaces before you confirm. The best ones are <b>hot</b>: sign them before your next game or they sign with another team.</li><li><b>Contracts - no money:</b> there are no salaries and no cap. Every player has an age and years left on his deal. When a deal ends, most players stay on a new 2-year deal. But a player on a losing team, or a star who wants a bigger role, may <b>leave</b> - the best free agent in his group takes his spot right away, and he will not sign back with you that year. See who stayed and who left in <b>Roster moves &rarr; Expiring</b>, and tap <b>Let go</b> if you want to replace a player who is staying. Rookies sign 3-year deals. Older players eventually <b>retire</b>.</li><li>After each season your players change: a good season, an award or a title helps them grow, a quiet one doesn't.</li></ul>` },
   { t: 'Playbook, records & rivals', h: `<ul class="tips"><li>On offense, the three cards (Short, Deep, Run) pick a play for you. Press <b>B</b> (or tap <b>Playbook</b>) to see every play with its route diagram and choose exactly the one you want. New plays: <b>Screen, Slant-Flat, Double Move, Play Action</b> (the defense bites on the fake) and the <b>Jet Sweep</b> and <b>QB Draw</b> runs (you keep the ball).</li><li>On defense the four big cards are Man, Zone, Blitz and Deep. Open <b>More calls</b> for <b>QB spy</b> (one defender shadows the quarterback), <b>Cover 2</b> (two deep halves) and <b>Corner blitz</b>.</li><li>The <b>Records</b> section keeps your franchise record book and every season's results. Break a record and the recap shows a <b>New record</b> card.</li><li>The <b>News</b> screen tells you about upsets, hot streaks and trades. Play the same team again and again, close or in the playoffs, and it becomes a <b>Rivalry</b> - you will see the head-to-head record and hear a louder crowd.</li></ul>` },
   { t: 'Challenges & music', h: `<ul class="tips"><li><b>Challenges</b> (main menu): <b>Two-Minute Drill</b> - you trail with 2:00 left and need a touchdown to take the lead. <b>Red Zone Challenge</b> - five tries from close in, no clock; a touchdown is 7, a field goal 3. <b>Daily Challenge</b> - a new set of conditions every day (clock, timeouts, defense, opponent); keep scoring until the time runs out or you are stopped. Earn 1 to 3 stars and beat your best. Challenges never touch your season or a saved game.</li><li><b>Menu music:</b> a quiet tune plays on the menus and stops when a game starts. Turn it off in Settings.</li></ul>` },
   { t: 'Smart plays & game depth', h: `<ul class="tips"><li><b>Before the snap (offense):</b> <span class="keys"><span>Z</span></span> sends a receiver in <b>motion</b> - if a defender follows him it is <b>man</b> coverage, if nobody follows it is <b>zone</b>. <span class="keys"><span>Q</span></span> is a <b>hot route</b>: change one receiver's route (or make him block). <span class="keys"><span>N</span></span> is <b>no-huddle</b>: the clock burns about 5 seconds less per play and the CPU cannot adjust, but your legs get tired.</li><li><b>The snap:</b> a real center snaps the ball. You can move your QB before the snap, but he has to stay inside the green circle on the field - his spot. If you leave it, the center still snaps to the red circle: a receiver or back standing there gets the ball, otherwise it is a <b>live loose ball</b>. After the snap the QB can scramble anywhere.</li><li><b>Screens</b> are quick throws behind the line - the other receivers block for the catcher. The <b>Read Option</b> run: watch the end. If he crashes in, <b>give</b> it to the back (SPACE); if he waits, <b>keep it</b> and run.</li><li><b>After a touchdown</b> you may go for <b>2</b> from the 3-yard line (8 if you score, 6 if not). Late in the game when you are behind or close, you may try an <b>onside kick</b>: a small green zone, about one chance in three if your timing is good.</li><li><b>Coach's challenge:</b> two flags a game. After a close call (a first down by a hair, a lost fumble, an interception, a CPU touchdown) press <span class="keys"><span>Y</span></span> before the next snap. A good flag overturns it; a bad one costs the flag.</li><li><b>Momentum</b> (the bar by the scoreboard) moves with big plays, turnovers and stops - at the extremes the side with it plays a little better. <b>Badges</b> (a star by the name) mark 88+ rated players: faster, surer hands, a stronger arm, a longer flag reach.</li><li><b>Game plan:</b> pick one before kickoff (run heavy, pass heavy, ball control, aggressive defense) - each has a small bonus and a small cost, written on its card. <b>Home field:</b> the crowd noise meter shows how loud it is. When the visiting team has the ball, a loud crowd tightens its PERFECT window and the CPU throws a bit worse.</li><li><b>Weather:</b> rain and snow make kicks shorter with a narrower green zone, punts shorter, and tight catches easier to drop. Check the wind flags too.</li><li><b>On defense:</b> press <span class="keys"><span>L</span></span> (or the LOCK button) to <b>lock on</b>: your defender chases the quarterback, the nearest receiver, or the ball carrier for you. You still choose when to sprint and lunge. As the quarterback, the <b>read hint</b> (Settings: Auto = on in Easy) labels receivers 1st, 2nd, 3rd and tells you who to look at now.</li></ul>` },
@@ -4544,7 +4571,7 @@ function showSettings() {
     <div class="opt ${o.assist ? 'on' : ''}" data-act="togassist"><b>Assist mode: ${o.assist ? 'On' : 'Off'}</b><span>Easier for all ages: throws are caught more easily and the defense runs a little slower.</span></div>
     <div class="opt ${o.adv ? 'on' : ''}" data-act="togadv"><b>Advanced controls: ${o.adv ? 'On' : 'Off'}</b><span>Off keeps it simple: one ACTION button and tap a receiver to throw. On adds formation, max protect, the full playbook, fake and throw away buttons.</span></div>
     <div class="opt ${o.returns !== false ? 'on' : ''}" data-act="togreturns"><b>Kick returns: ${o.returns !== false ? 'On' : 'Off'}</b><span>When the CPU punts or kicks off to you, you run the return. Off: the ball is just placed for you.</span></div>
-    <div class="opt ${o.fumbles !== false ? 'on' : ''}" data-act="togfum"><b>Fumbles: ${o.fumbles !== false ? 'On' : 'Off'}</b><span>Now and then a flag pull pops the ball loose and both teams race for it. Off: the ball is never dropped.</span></div>
+    <div class="opt ${o.fumbles !== false ? 'on' : ''}" data-act="togfum"><b>Fumbles &amp; wild plays: ${o.fumbles !== false ? 'On' : 'Off'}</b><span>Now and then a flag pull pops the ball loose, a snap sails over the QB's head, or a returner muffs the catch. Both teams race for the ball, and the team that grabs it can run it back. Off: the ball is never dropped.</span></div>
     ${navigator.vibrate ? `<div class="opt ${o.haptics !== false ? 'on' : ''}" data-act="toghaptics"><b>Vibration: ${o.haptics !== false ? 'On' : 'Off'}</b><span>A little buzz on touchdowns, sacks and interceptions (phones that support it).</span></div>` : ''}
     ${(IS_TOUCH && document.documentElement.requestFullscreen) ? `<div class="opt ${o.full !== false ? 'on' : ''}" data-act="togfull"><b>Full screen: ${o.full !== false ? 'On' : 'Off'}</b><span>Hide the browser bars while you play. On an iPad or iPhone, use Share, then Add to Home Screen for the same effect.</span></div>` : ''}
     <div class="opt ${o.preview !== false ? 'on' : ''}" data-act="togpreview"><b>Matchup preview: ${o.preview !== false ? 'On' : 'Off'}</b><span>A scouting screen with ratings, key matchups, players to watch and the other coach's style before each season game.</span></div>
@@ -8668,7 +8695,7 @@ function qbOut() {
 function snapCheck() {
   G.snapAnim = null; G.snapFlub = false;
   if (!center || !qb) return;
-  if (!qbOut()) { G.snapAnim = { t: 0, dur: 0.26, x0: center.x, z0: center.z }; return; }
+  if (!qbOut()) { if (badSnapRoll()) return; G.snapAnim = { t: 0, dur: 0.26, x0: center.x, z0: center.z }; return; }
   const h = qbHome();
   let who = null, bd = 2.4;
   for (const r of recs) { if (r.bl || r.blocking) continue; const d = Math.hypot(r.x - h.x, r.z - h.z); if (d < bd) { bd = d; who = r; } }
@@ -11340,7 +11367,7 @@ function simAct(a, v) {
 }
 // ================= PHASE I: WEB RELEASE =================
 // The About screen, the "Add to Home Screen" tip, the no-3D message, a few iPad/Safari fixes and a tiny error log for support.
-const APP_VERSION = '0.9.2';
+const APP_VERSION = '0.9.3';
 const APP_STAGE = 'iPad test build';
 const WEB = { errs: [], standalone: false, ios: false, persisted: null, no3d: false, copyMsg: '' };
 
@@ -11522,6 +11549,84 @@ function kidAct(a) {
     case 'kiddone': if (ui.howFrom === 'pause') showPause(); else if (ui.howFrom === 'tut') TUT.resumeAfterPages(); else showLanding(); return true;
   }
   return false;
+}
+// ================= WILD PLAYS (v36): fumble returns, random bad snaps, muffed catches =================
+// All of them follow the "Fumbles & wild plays" switch in Settings (on by default). Nothing here happens in the tutorial or in 2-player kick returns.
+TUNE.wild = TUNE.wild == null ? 1 : TUNE.wild;                 // 1 = normal; tests turn it up
+const wxWild = () => (ENV.wx === 'rain' ? 1.6 : ENV.wx === 'snow' ? 1.8 : 1);
+const wildOn = () => !G.cfg.tutor && !G.cfg.noFumble && store.load().opts.fumbles !== false;
+const wildP = base => (wildOn() ? Math.min(0.9, base * TUNE.wild * wxWild()) : 0);
+
+// ---------- a random bad snap on a pass or run play ----------
+// The ball sails over the quarterback's head (high) or skips along the ground (low) and becomes a live loose ball.
+function badSnapRoll() {
+  if (!center || !qb || G.conv || G.loose || !G.play || (G.play.kind !== 'pass' && G.play.kind !== 'run')) return false;
+  if (Math.random() >= wildP(0.012 * (1.25 - 0.5 * fr(rt(center, 'hnd'))))) return false;
+  const h = qbHome(), high = Math.random() < 0.5;
+  const tx = clamp(h.x + rnd(-3.5, 3.5), -HALF_W + 2, HALF_W - 2), tz = h.z - (high ? rnd(4, 8) : rnd(0.5, 2.5));
+  const dz = tz - (center.z - 0.1), dx = tx - center.x;
+  G.loose = { favor: Math.random() < 0.55 ? offKey() : (offKey() === 'u' ? 'x' : 'u'), t: 0, x: center.x, z: center.z, y: 1.0,
+    vx: dx / 0.55 * 0.85, vz: dz / 0.55 * 0.85, vy: high ? 6.5 : 1.4, bounces: 0, by: qb, pull: center, from: 'live', label: 'BAD SNAP' };
+  G.state = 'loose'; G.holder = null; G.fumbled = true; G.snapAnim = null;
+  fxText(h.x, h.z, 'BAD SNAP!', '#ffb347', 1.5, 3.7); fxShake(0.35); sfx.thud(); sfx.bad(); crowdOoh(1);
+  setMsg('', (high ? 'BAD SNAP - it sails over the QB! ' : 'BAD SNAP - it skips along the ground! ') + (humanO() ? 'Get on it!' : 'Go get it!')); warnT = 2.2;
+  try { announce('Bad snap!', 2.6, 'play'); } catch (e) {}
+  return true;
+}
+
+// ---------- a muffed punt or kickoff catch (you are the returner) ----------
+function muffRoll(r, K) {
+  if (G.vs || !returnsOn() || G.cfg.tutor) return false;
+  if (Math.random() >= wildP((K.kind === 'punt' ? 0.045 : 0.02) * (1.25 - 0.5 * fr(rt(r, 'hnd'))))) return false;
+  for (const d of defense) if (d.role === 'cover') { d.role = 'chase'; d.baseRole = 'chase'; }       // the kicking team can pounce on it too
+  let nd = null, bd = 1e9; for (const d of defense) { const dd = Math.hypot(d.x - r.x, d.z - r.z); if (dd < bd) { bd = dd; nd = d; } }
+  G.holder = null;
+  G.loose = { favor: Math.random() < 0.5 ? 'u' : 'x', t: 0, x: r.x, z: r.z + 0.3, y: 1.3, vx: rnd(-2, 2), vz: rnd(-1.5, 2.5), vy: 3.2, bounces: 0, by: r, pull: nd, from: 'kret', muff: true, label: 'MUFFED' };
+  G.state = 'loose'; G.fumbled = true; G.caught = true;
+  fxText(r.x, r.z, 'MUFFED!', '#ffb347', 1.5, 3.7); fxShake(0.4); sfx.thud(); sfx.bad(); crowdOoh(1);
+  setMsg('', 'MUFFED IT! Loose ball - get on it!'); warnT = 2;
+  try { announce('He muffs it! Loose ball!', 2.6, 'play'); } catch (e) {}
+  return true;
+}
+
+// ---------- the CPU recovers YOUR fumble and runs it back (worked out automatically) ----------
+// Returns true when it handled the whole play (the caller then does nothing more).
+function cpuScoop(L, r, z) {
+  const pTd = clamp(0.22 * Math.exp(-z / 14), 0, 0.2);
+  const ydsCap = Math.max(0, Math.floor(z - 1));
+  const td = Math.random() < pTd;
+  const yds = td ? Math.round(z) : Math.min(ydsCap, Math.round(rnd(0, 6) + rnd(0, 6) * (0.5 + 0.5 * clamp(fr(rt(r, 'spd')) + 0.5, 0, 1.5))));
+  if (!td && yds < 3) return false;                                    // a short pickup is just a normal lost fumble
+  const you = true;
+  fxText(r.x, r.z, td ? 'SCOOP AND SCORE!' : 'RECOVERED!', '#ff7b7b', 1.4, 3.5); fxShake(0.35);
+  if (td) {
+    G.score.opp += 7; G.poss = 'opp'; G.los = clamp(z, 1, 99);
+    G.last = { off: 'opp', gain: Math.round(z), incomplete: false, td: true, turnover: false, ret: true, caught: true, air: 0, run: true, fumRet: { car: L.by.num, def: r.num } };
+    try { announce('Fumble! ' + aName(r) + ' scoops it up and takes it all the way!', 3, 'play'); } catch (e) {}
+    sfx.bad(); crowdGroan(1); if (GL3.on) celebrate('fum', r, { down: L.by, downRole: 'knees' });
+    finishPlay('FUMBLE - SCOOP AND SCORE!', nm('x') + ' return it ' + Math.round(z) + ' yards for a touchdown  |  +7', '#ff7b7b', { incomplete: false, driveEnded: true, runoff: 5 });
+    return true;
+  }
+  const nextLos = clamp(Math.round(100 - z) + yds, 1, 99);
+  G.last = { off: G.poss, gain: 0, incomplete: false, td: false, turnover: true, caught: G.caught, car: L.by.num, def: r.num, qb: qb ? qb.num : null, fum: true, fumLost: true, spot: z, run: G.play && G.play.kind === 'run', air: G.airYds };
+  try { announce('Fumble! ' + aName(r) + ' recovers it and runs it back ' + yds + '.', 3, 'play'); } catch (e) {}
+  crowdGroan(0.9); if (GL3.on) celebrate('fum', r, { down: L.by, downRole: 'knees' });
+  finishPlay((L.label || 'FUMBLE') + ' - LOST!', nm('x') + ' recover and run it back ' + yds + ' yards - ball on the ' + (nextLos <= 50 ? 'own ' + nextLos : 'opponent ' + (100 - nextLos)) + ' for the other team', '#ff7b7b', { incomplete: false, driveEnded: true, nextLos, runoff: 6 });
+  return true;
+}
+
+// ---------- a bad snap on a punt or field goal ----------
+// Returns true if it ended the play (the other team takes over, a few yards back). Punts handle the "kicks a short one" case themselves.
+function kickBadSnap(what) {
+  const you = G.poss === 'user' && !G.vs, loss = Math.round(rnd(6, 12));
+  const spot = Math.max(1, G.los - loss), nextLos = G.ot ? 50 : clamp(Math.round(100 - spot), 1, 99);
+  G.stats.plays++; sfx.whistle(); sfx.bad(); crowdOoh(1);
+  fxText(0, G.los - 4, 'BAD SNAP!', '#ffb347', 1.5, 3.7); fxShake(0.35);
+  G.last = { off: G.poss, gain: -loss, incomplete: false, td: false, turnover: true, caught: false, car: 3, def: null, qb: null, fum: true, fumLost: true, spot, run: false, air: 0 };
+  try { announce('Bad snap! ' + (you ? 'You lose ' : 'They lose ') + loss + ' yards and the ball.', 3, 'play'); } catch (e) {}
+  const who = G.vs ? nm(offKey()) + ' ' : you ? '' : nm('x') + ' ';
+  finishPlay(who + 'BAD SNAP ON THE ' + what + '!', 'The kicker falls on it - ' + loss + ' yards back. Ball on the ' + (nextLos <= 50 ? 'own ' + nextLos : 'opponent ' + (100 - nextLos)) + ' for the other team', you ? '#ff7b7b' : '#7dff9a', { incomplete: false, driveEnded: true, nextLos, runoff: 6 });
+  return true;
 }
 
 // ================= BOOT =================
@@ -11761,6 +11866,21 @@ window.__legacy = {
   AU,
   showKid,
   kidAct,
+  TUNE,
+  wildP,
+  wildOn,
+  badSnapRoll,
+  muffRoll,
+  cpuScoop,
+  kickBadSnap,
+  recoverLoose,
+  startLoose,
+  looseStep,
+  fumbleLost,
+  startPickReturn,
+  startReturn,
+  retBall,
+  offKey,
   /*B-EXPORTS*/
 };
 })();
