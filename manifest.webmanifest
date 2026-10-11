@@ -1,6 +1,6 @@
 {
-  "name": "Legacy",
-  "short_name": "Legacy",
+  "name": "legacy-football",
+  "short_name": "legacy-football",
   "description": "A flag football game where you play every snap.",
   "start_url": "./index.html",
   "scope": "./",

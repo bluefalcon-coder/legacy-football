@@ -9,8 +9,8 @@
 <meta name="theme-color" content="#0a0e22">
 <title>Legacy - Flag Football</title>
 <meta name="description" content="Legacy is a flag football game you play every snap of. Pick a team, play a season, chase the title. Free, no accounts, no ads.">
-<meta name="apple-mobile-web-app-title" content="Legacy">
-<meta name="application-name" content="Legacy">
+<meta name="apple-mobile-web-app-title" content="legacy-football">
+<meta name="application-name" content="legacy-football">
 <meta name="format-detection" content="telephone=no">
 <meta property="og:title" content="Legacy - Flag Football">
 <meta property="og:description" content="Play every snap. Chase the title. Build your legacy.">
@@ -5821,20 +5821,19 @@ const hotTag = p => isHot(p) ? '<span class="hint" style="color:#ffd24d;border-c
 const TUT = {
   after: null, i: 0, done: false, fails: 0, started: false,
   seq: [
-    { k: 'pages', from: 0, to: 1 },
+    { k: 'pages', kid: [0, 1, 2] },
     { k: 'play', poss: 'user', force: { pkg: 'QuickOuts', call: 'deep' }, goal: 'pass',
-      ban: '<b>Practice 1 of 3 - Throw a pass.</b> You are the quarterback (circled in yellow). Press <b>SPACE</b> (or tap the message) to snap. The most open receiver gets a gold <b>OPEN</b> marker - press <b>SPACE</b> again (or tap <b>THROW</b>) to throw to him. You can also <b>tap or click any receiver</b>.',
-      fail: 'Not quite - wait for the gold OPEN marker (a green ring) before you throw.' },
-    { k: 'pages', from: 2, to: 2 },
-    { k: 'play', poss: 'user', force: { pkg: 'Spread', call: 'zone' }, goal: 'perfect',
-      ban: '<b>Practice 2 of 3 - Perfect timing.</b> After the snap, wait about a second. When a receiver gets open, a <b>green ring shrinks</b> onto him and the marker says <b>NOW!</b> Throw while the ring is still shrinking for a <b>PERFECT</b> pass.',
-      fail: 'Almost - snap, wait a moment, and throw the instant the green ring starts shrinking onto a receiver (NOW!).' },
-    { k: 'pages', from: 3, to: 3 },
+      ban: IS_TOUCH ? '<b>Practice 1 of 3 - Throw!</b> Tap <b>SNAP</b>. When a friend shows <b>OPEN</b>, tap <b>THROW</b>!' : '<b>Practice 1 of 3 - Throw!</b> Press <b>SPACE</b>. When a friend shows <b>OPEN</b>, press <b>SPACE</b> again!',
+      fail: 'Almost! Wait for the OPEN sign, then throw.' },
+    { k: 'pages', kid: [5] },
+    { k: 'play', poss: 'user', force: { pkg: 'Spread', call: 'zone' }, goal: 'timing',
+      ban: '<b>Practice 2 of 3 - Timing!</b> Snap, then wait a moment. When the <b>green ring</b> shrinks on a friend, throw!',
+      fail: 'Almost! Snap, wait a moment, then throw when the green ring shrinks.' },
+    { k: 'pages', kid: [3] },
     { k: 'play', poss: 'opp', force: { pkg: 'CurlFlat', call: 'man' }, goal: 'stop',
-      ban: '<b>Practice 3 of 3 - Play defense.</b> The computer has the ball. You control the defender with the yellow ring/arrow - the game switches you to whoever is closest to the ball. Chase the ball and get close to pull the flag. <b>SPACE</b> (or <b>LUNGE</b>) stretches your reach. Hold them to under 8 yards.',
-      fail: 'They got away - chase the ball carrier, take an angle, and press SPACE to lunge when close.' },
-    { k: 'pages', from: 5, to: 5 },
-    { k: 'pages', from: 9, to: 9 }
+      ban: IS_TOUCH ? '<b>Practice 3 of 3 - Defense!</b> You are the circled player. Chase him, then tap <b>LUNGE</b> to grab his flag!' : '<b>Practice 3 of 3 - Defense!</b> You are the circled player. Chase him, then press <b>SPACE</b> to grab his flag!',
+      fail: 'He got away! Chase him and grab the flag.' },
+    { k: 'pages', kid: [6] }
   ],
   // v31: the Playbook Studio's Test button - one repeating practice play on the real field (5v5 or 11v11), nothing saved
   beginTest(after, s) {
@@ -5854,19 +5853,21 @@ const TUT = {
     const s = TUT.cur();
     if (!s) { TUT.finish(false); return; }
     TUT.fails = 0; TUT.done = false;
-    if (s.k === 'pages') { TUT.showPages(s.from, s.to); }
+    if (s.k === 'pages') { TUT.showPages(s); }
     else { TUT.setPlay(s); }
   },
-  showPages(from, to) {
+  // a group of Kid's Guide pages (s.kid = their numbers in kidAll())
+  showPages(s) {
     G.modal = true; G.paused = true; $('tbar').style.display = 'none'; setMsg('', '');
-    TUT.pg = from; TUT.pgTo = to;
+    TUT.pg = 0; TUT.pgTo = s.kid.length - 1;
     TUT.renderPage();
   },
   renderPage() {
-    const i = TUT.pg, p = HOWTO[i], last = i >= TUT.pgTo;
-    const dots = HOWTO.map((_, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('');
-    openScr(`<div class="wrap"><div class="row"><span class="pill y">Tutorial</span><span class="sp"></span><button class="b sm" data-act="tutSkip">Skip tutorial</button></div><h2 style="margin-top:12px">${esc(p.t)}</h2><div class="card">${p.h}</div><div class="dots">${dots}</div>
-      <div class="row"><span class="sp"></span><button class="b pri" data-act="tutNext">${last ? (TUT.seq[TUT.i + 1] ? 'Go to practice' : 'Finish') : 'Next'}</button></div></div>`, false);
+    const s = TUT.cur(), n = s.kid.length, i = TUT.pg, p = kidAll()[s.kid[i]], last = i >= TUT.pgTo;
+    const dots = s.kid.map((_, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('');
+    openScr(`<div class="wrap kidw"><div class="row"><span class="pill y">Tutorial</span><span class="sp"></span><button class="b sm" data-act="tutSkip">Skip tutorial</button></div>
+      ${kidBody(p)}${n > 1 ? `<div class="dots">${dots}</div>` : ''}
+      <div class="row"><span class="sp"></span><button class="b kidb pri" data-act="tutNext">${last ? (TUT.seq[TUT.i + 1] ? 'Go to practice' : 'Finish') : 'Next'}</button></div></div>`, false);
   },
   pageNext() {
     if (TUT.pg < TUT.pgTo) { TUT.pg++; TUT.renderPage(); return; }
@@ -5890,7 +5891,7 @@ const TUT = {
     $('tSkipAll').textContent = s.test ? 'Back to the Studio' : 'Skip tutorial';
     bar.style.display = 'block';
     if (s.ret) return;
-    setMsg('', G.poss === 'user' ? 'Press SPACE or tap here to snap the ball' : 'The CPU has the ball - press SPACE or tap here to start');
+    setMsg('', IS_TOUCH ? (G.poss === 'user' ? 'Tap SNAP (or here) to start' : 'Tap here to start') : (G.poss === 'user' ? 'Press SPACE to snap the ball' : 'The CPU has the ball - press SPACE to start'));
   },
   onSnap() { const s = TUT.cur(); if (s && s.goal === 'stop') setMsg('', ''); },
   onSwitch() {},
@@ -5904,14 +5905,20 @@ const TUT = {
     let ok = false;
     if (s.goal === 'pass') ok = !!L.caught;
     else if (s.goal === 'perfect') ok = !!L.perfect && !!L.caught;
+    else if (s.goal === 'timing') ok = !!L.caught;
     else if (s.goal === 'gain7') ok = !!L.td || (L.gain >= 7);
     else if (s.goal === 'ret10') ok = !!L.ret && !L.fair && (!!L.td || L.gain >= 10);
     else if (s.goal === 'stop') ok = !L.td && (L.incomplete || L.turnover || L.gain < 8);
+    let kind = ok ? 'ok' : 'miss';
+    if (ok && s.goal === 'timing' && L.perfect) kind = 'perfect';
+    if (!ok) { TUT.fails++; if (s.goal === 'stop' && TUT.fails >= 2) { ok = true; kind = 'try'; } }   // a friendly pass after two misses on defense
     TUT.done = ok;
-    if (!ok) TUT.fails++;
     $('tSkipStep').style.display = TUT.fails >= 2 && !s.test ? '' : 'none';
-    if (ok) setMsg(big, 'Step complete! Press SPACE or tap to continue', '#7dff9a');
-    else setMsg(big, s.fail + '  |  Press SPACE or tap to try again', '#ffb3b3');
+    const go = IS_TOUCH ? 'Tap' : 'Press SPACE';
+    if (kind === 'try') setMsg('GOOD TRY!', "You've got it!  |  " + go + ' to keep going', '#7dff9a');
+    else if (kind === 'perfect') setMsg('PERFECT!', 'Great timing!  |  ' + go + ' to keep going', '#7dff9a');
+    else if (ok) setMsg(big, 'Great!  |  ' + go + ' to keep going', '#7dff9a');
+    else setMsg(big, s.fail + '  |  ' + go + ' to try again', '#ffb3b3');
   },
   next() {      // SPACE on the result screen
     if (TUT.done) TUT.advance(); else TUT.setPlay(TUT.cur());
@@ -11333,7 +11340,7 @@ function simAct(a, v) {
 }
 // ================= PHASE I: WEB RELEASE =================
 // The About screen, the "Add to Home Screen" tip, the no-3D message, a few iPad/Safari fixes and a tiny error log for support.
-const APP_VERSION = '0.9.1';
+const APP_VERSION = '0.9.2';
 const APP_STAGE = 'iPad test build';
 const WEB = { errs: [], standalone: false, ios: false, persisted: null, no3d: false, copyMsg: '' };
 
@@ -11475,24 +11482,34 @@ function kidPics() {
   const p4 = S.field(`${S.defs}${S.man(210, 92, BLUE, '<rect x="-3" y="14" width="6" height="14" rx="2" fill="#ffd400" transform="rotate(25 0 14)"/>')}${S.ball(224, 98)}${S.man(80, 96, RED)}${S.arrow('M104 90H176', '#ffd400')}<g transform="translate(214 152)"><text text-anchor="middle" font-size="15" font-weight="900" fill="#fff" font-family="system-ui,sans-serif">FLAG!</text><path d="M0-18V-36" stroke="#ffd400" stroke-width="3" stroke-dasharray="3 5" stroke-linecap="round"/></g>`);
   // 5: pause button + play
   const p5 = S.field(`<g transform="translate(262 28)"><rect x="-22" y="-22" width="44" height="44" rx="10" fill="#0a0e22" fill-opacity=".8" stroke="#fff" stroke-opacity=".5" stroke-width="2"/><text y="8" text-anchor="middle" font-size="20" font-weight="900" fill="#fff" font-family="system-ui,sans-serif">II</text></g><g transform="translate(130 100)"><rect x="-84" y="-28" width="168" height="56" rx="28" fill="#ffd400"/><text y="9" text-anchor="middle" font-size="26" font-weight="900" fill="#241a00" font-family="system-ui,sans-serif">PLAY!</text></g>`);
-  return [p1, p2, p3, p4, p5];
+  // 6: read the ring (tutorial only)
+  const ring = (x, c) => `<ellipse cx="${x}" cy="124" rx="24" ry="9" fill="none" stroke="${c}" stroke-width="5"/>`;
+  const p6 = S.field(`${ring(90, '#4dff88')}${S.man(90, 100, BLUE)}<text x="90" y="30" text-anchor="middle" font-size="22" font-weight="900" fill="#4dff88" font-family="system-ui,sans-serif">GO!</text>${ring(236, '#ff6b6b')}${S.man(236, 100, BLUE)}${S.man(276, 88, RED)}<text x="236" y="30" text-anchor="middle" font-size="22" font-weight="900" fill="#ff6b6b" font-family="system-ui,sans-serif">CLOSE!</text>`);
+  // 7: great job (tutorial only)
+  const star = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(k => { const r = k % 2 ? 26 : 62, a = -Math.PI / 2 + k * Math.PI / 5; return (160 + r * Math.cos(a)).toFixed(1) + ',' + (88 + r * Math.sin(a)).toFixed(1); }).join(' ');
+  const p7 = S.field(`<polygon points="${star}" fill="#ffd400" stroke="#fff" stroke-width="4" stroke-linejoin="round"/><g stroke="#fff" stroke-width="4" stroke-linecap="round"><path d="M60 40l10 10M70 40L60 50M260 130l10 10M270 130l-10 10M250 36l8 8M258 36l-8 8"/></g>`);
+  return [p1, p2, p3, p4, p5, p6, p7];
 }
-function kidPages() {
+function kidAll() {
   const t = IS_TOUCH, pics = kidPics();
   return [
     { t: 'Score!', pic: pics[0], h: 'Carry the ball into the <b>end zone</b>. That is a touchdown. It is worth <b>7 points</b>. The team with the most points wins!' },
     { t: 'Run!', pic: pics[1], h: t ? 'Use your <b>left thumb</b> to steer. Press <b>SPRINT</b> to run faster.' : 'Use <b>W A S D</b> or the arrow keys to move. Hold <b>SHIFT</b> to run faster.' },
     { t: 'Throw!', pic: pics[2], h: t ? 'Tap <b>SNAP</b> to start the play. A friend with a gold <b>OPEN</b> sign is free. Press <b>THROW</b> to pass him the ball. Then run!' : 'Press <b>SPACE</b> to start the play. A friend with a gold <b>OPEN</b> sign is free. Press <b>SPACE</b> again to throw him the ball. Then run!' },
     { t: 'No tackles!', pic: pics[3], h: t ? 'Nobody gets hit in flag football. Grab the runner\'s <b>flag</b> to stop him. You are the circled player. Chase him and press the <b>big button</b>.' : 'Nobody gets hit in flag football. Grab the runner\'s <b>flag</b> to stop him. You are the circled player. Chase him and press <b>SPACE</b>.' },
-    { t: 'Ready?', pic: pics[4], h: 'Pick <b>Exhibition Game</b> and choose <b>Easy</b>. The <b>II</b> button at the top right stops the game any time.' }
+    { t: 'Ready?', pic: pics[4], h: 'Pick <b>Exhibition Game</b> and choose <b>Easy</b>. The <b>II</b> button at the top right stops the game any time.' },
+    { t: 'Read the ring', pic: pics[5], h: 'Look at the ring under your friend. <b>Green</b> ring = go! <b>Red</b> ring = a defender is close.' },
+    { t: 'Great job!', pic: pics[6], h: 'Pick <b>Exhibition Game</b> and choose <b>Easy</b> to play a real game. Have fun!' }
   ];
 }
+function kidPages() { return kidAll().slice(0, 5); }
+function kidBody(p) { return `<h2 class="kidt">${esc(p.t)}</h2><div class="kidp">${p.pic}</div><div class="card kidc">${p.h}</div>`; }
 function kidHtml(i) {
   const pg = kidPages(), p = pg[i], last = i === pg.length - 1;
   const dots = pg.map((_, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('');
   const back = ui.howFrom === 'pause' ? 'Back to pause menu' : 'Back to menu';
   return `<div class="wrap kidw"><div class="row"><span class="pill y">Kid's guide ${i + 1} of ${pg.length}</span><span class="sp"></span><button class="b sm" data-act="kidfull">Full guide</button></div>
-    <h2 class="kidt">${esc(p.t)}</h2><div class="kidp">${p.pic}</div><div class="card kidc">${p.h}</div><div class="dots">${dots}</div>
+    ${kidBody(p)}<div class="dots">${dots}</div>
     <div class="row"><button class="b kidb" data-act="kidprev" ${i === 0 ? 'disabled' : ''}>Back</button><span class="sp"></span>${last ? `<button class="b kidb pri" data-act="kiddone">${back}</button>` : '<button class="b kidb pri" data-act="kidnext">Next</button>'}</div></div>`;
 }
 function showKid(i, from) { ui.kidPage = Math.max(0, Math.min(4, i)); if (from !== undefined) ui.howFrom = from; openScr(kidHtml(ui.kidPage)); }
